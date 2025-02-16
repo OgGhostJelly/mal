@@ -16,6 +16,17 @@ pub fn write_value(o: &mut impl Write, value: &Value) -> fmt::Result {
             Ok(())
         },
         Value::Symbol(sym) => o.write_str(sym),
-        Value::Number(num) => o.write_str(&num.to_string()),
+        Value::Int(num) => o.write_str(&num.to_string()),
+        Value::Bool(true) => o.write_str("true"),
+        Value::Bool(false) => o.write_str("false"),
+        Value::Nil => o.write_str("nil"),
+        Value::Str(str) => write!(o, "\"{}\"", escape_str(str)),
+        Value::Keyword(str) => write!(o, ":{str}"),
     }
+}
+
+fn escape_str(str: &str) -> String {
+    str.replace("\\", "\\\\")
+        .replace("\n", "\\n")
+        .replace("\"", "\\\"")
 }

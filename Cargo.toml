@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+lazy_static = "1.5.0"
 pcre2 = "0.2.9"
 thiserror = "2.0.11"
 tl = "0.7.8"

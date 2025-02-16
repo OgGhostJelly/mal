@@ -26,7 +26,11 @@ pub fn rep(inp: &str) -> Result<()> {
 pub enum Value {
     List(Vec<Value>),
     Symbol(String),
-    Number(i64),
+    Str(String),
+    Keyword(String),
+    Int(i64),
+    Bool(bool),
+    Nil,
 }
 
 impl Display for Value {

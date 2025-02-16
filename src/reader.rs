@@ -1,20 +1,25 @@
 use core::str;
-use std::num::ParseIntError;
+use std::{num::ParseIntError, str::Utf8Error};
+use lazy_static::lazy_static;
 
-use pcre2::bytes::RegexBuilder;
+use pcre2::bytes::Regex;
 
-use crate::Value;
+use crate::Value::{self, List, Int, Symbol, Nil, Bool, Str, Keyword};
 
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("unexpected eof")]
-    UnexpectedEOF,
+    #[error("unmatched left parenthesis")]
+    UnmatchedLeftParenthesis,
+    #[error("unmatched right parenthesis")]
+    UnmatchedRightParenthesis,
     #[error(transparent)]
     PCRE(#[from] pcre2::Error),
     #[error(transparent)]
     NumberParseError(#[from] ParseIntError),
+    #[error(transparent)]
+    InvalidUtf8(#[from] Utf8Error),
 }
 
 pub struct Reader<'a> {
@@ -47,20 +52,21 @@ impl Reader<'_> {
 
 impl Reader<'_> {
     pub fn read_form(&mut self) -> Result<Value> {
-        match self.peek() {
-            b"(" => self.read_list(),
+        let val = match self.peek() {
+            b"(" => self.read_seq(),
             _ => self.read_atom(),
-        }
+        }?;
+        Ok(val)
     }
 
-    pub fn read_list(&mut self) -> Result<Value> {
+    pub fn read_seq(&mut self) -> Result<Value> {
         let mut list = Vec::new();
         loop {
             let Some(token) = self.next() else {
-                return Err(Error::UnexpectedEOF)
+                return Err(Error::UnmatchedLeftParenthesis)
             };
             if token == b")" {
-                return Ok(Value::List(list));
+                return Ok(List(list));
             }
             list.push(self.read_form()?);
         }
@@ -68,28 +74,51 @@ impl Reader<'_> {
 
     pub fn read_atom(&self) -> Result<Value> {
         let token = self.peek();
-        let str = str::from_utf8(self.peek()).unwrap();
-        
-        if token.is_empty() {
-            return Err(Error::UnexpectedEOF);
-        }
-        
-        if token[0].is_ascii_digit() || token[0] == b'-' {
-            return match str.parse() {
-                Ok(num) => Ok(Value::Number(num)),
-                Err(e) => return Err(Error::NumberParseError(e)),
-            };
+
+        lazy_static! {
+            static ref INT_RE: Regex = Regex::new(r#"^-?[0-9]+$"#)
+                .expect("regex should be valid");
+            static ref STR_RE: Regex = Regex::new(r#""(?:\\.|[^\\"])*""#)
+                .expect("regex should be valid");
+            static ref KEYWORD_RE: Regex = Regex::new(r#"^:[\S]*$"#)
+                .expect("regex should be valid");
         }
 
-        return Ok(Value::Symbol(str.to_string()))
+        match token {
+            b"nil" => Ok(Nil),
+            b"true" => Ok(Bool(true)),
+            b"false" => Ok(Bool(false)),
+            token => {
+                let str = str::from_utf8(token)?;
+                if INT_RE.is_match(token)? {
+                    Ok(Int(str.parse()?))
+                } else if STR_RE.is_match(token)? {
+                    Ok(Str(unescape_str(str)))
+                } else if KEYWORD_RE.is_match(token)? {
+                    Ok(Keyword(str[1..].to_string()))
+                } else {
+                    Ok(Symbol(str.to_string()))
+                }
+            }
+        }
     }
 }
 
+fn unescape_str(str: &str) -> String {
+    str.trim_matches('\"')
+        .replace("\\\\", "\\")
+        .replace("\\n", "\n")
+        .replace("\\\"", "\"")
+}
+
 pub fn tokenize(str: &str) -> Result<Vec<&[u8]>> {
-    let regex = RegexBuilder::new().build(r#"[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*)"#)?;
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r#"[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*)"#)
+            .expect("regex should be valid");
+    }
 
     let mut vec = vec![];
-    for found in regex.find_iter(str.as_bytes()) {
+    for found in RE.find_iter(str.as_bytes()) {
         let found = found?;
         vec.push(found.as_bytes().trim_ascii());
     }
@@ -125,33 +154,33 @@ mod test {
 
     #[test]
     fn test_read_str() {
-        let value = read_str("  ( +  1  (+ 1 3) ) ").expect("read_str should not fail with the given input");
+        let value = read_str("  ( +  1  (+ \"my \\\\ cool \\\" string\\n\" 3) ) ").expect("read_str should not fail with the given input");
         assert_eq!(value, Value::List(vec![
             Value::Symbol("+".into()),
-            Value::Number(1),
+            Value::Int(1),
             Value::List(vec![
                 Value::Symbol("+".into()),
-                Value::Number(1),
-                Value::Number(3),
+                Value::Str("my \\ cool \" string\n".into()),
+                Value::Int(3),
             ]),
         ]));
 
         let value = read_str("  123  ").expect("read_str should not fail with the given input");
-        assert_eq!(value, Value::Number(123));
+        assert_eq!(value, Value::Int(123));
 
-        let value = read_str("  (123  456  789) ").expect("read_str should not fail with the given input");
+        let value = read_str("  (true  nil  false) ").expect("read_str should not fail with the given input");
         assert_eq!(value, Value::List(vec![
-            Value::Number(123),
-            Value::Number(456),
-            Value::Number(789),
+            Value::Bool(true),
+            Value::Nil,
+            Value::Bool(false),
         ]));
 
         let value = read_str("  abc  ").expect("read_str should not fail with the given input");
         assert_eq!(value, Value::Symbol("abc".into()));
 
-        let value = read_str("(abc)").expect("read_str should not fail with the given input");
+        let value = read_str("(:abc)").expect("read_str should not fail with the given input");
         assert_eq!(value, Value::List(vec![
-            Value::Symbol("abc".into()),
+            Value::Keyword("abc".into()),
         ]));
     }
 }
