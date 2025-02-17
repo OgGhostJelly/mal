@@ -3,7 +3,7 @@ use std::{
     fmt,
 };
 
-use crate::{printer, Error};
+use crate::{env, printer};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Value {
@@ -15,7 +15,7 @@ pub enum Value {
     Keyword(String),
     Int(i64),
     Bool(bool),
-    Func(&'static str, fn(Vec<Value>) -> Result<Value, Error>),
+    Func(&'static str, fn(Vec<Value>) -> Result<Value, env::Error>),
     Nil,
 }
 

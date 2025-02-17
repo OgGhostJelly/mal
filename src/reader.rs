@@ -8,10 +8,7 @@ use std::{
 
 use pcre2::bytes::Regex;
 
-use crate::{
-    types::MapKey,
-    Value::{self, Bool, Int, Keyword, List, Map, Nil, Str, Symbol, Vector},
-};
+use crate::{types::MapKey, Value};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -64,9 +61,9 @@ impl Reader<'_> {
 impl Reader<'_> {
     pub fn read_form(&mut self) -> Result<Value> {
         let val = match self.peek() {
-            b"(" => Ok(List(SeqReader::new(self, b")").into_list()?)),
-            b"[" => Ok(Vector(SeqReader::new(self, b"]").into_vec()?)),
-            b"{" => Ok(Map(SeqReader::new(self, b"}").into_map()?)),
+            b"(" => Ok(Value::List(SeqReader::new(self, b")").into_list()?)),
+            b"[" => Ok(Value::Vector(SeqReader::new(self, b"]").into_vec()?)),
+            b"{" => Ok(Value::Map(SeqReader::new(self, b"}").into_map()?)),
             _ => self.read_atom(),
         }?;
         Ok(val)
@@ -84,19 +81,19 @@ impl Reader<'_> {
         }
 
         match token {
-            b"nil" => Ok(Nil),
-            b"true" => Ok(Bool(true)),
-            b"false" => Ok(Bool(false)),
+            b"nil" => Ok(Value::Nil),
+            b"true" => Ok(Value::Bool(true)),
+            b"false" => Ok(Value::Bool(false)),
             token => {
                 let str = str::from_utf8(token)?;
                 if INT_RE.is_match(token)? {
-                    Ok(Int(str.parse()?))
+                    Ok(Value::Int(str.parse()?))
                 } else if STR_RE.is_match(token)? {
-                    Ok(Str(unescape_str(str)))
+                    Ok(Value::Str(unescape_str(str)))
                 } else if KEYWORD_RE.is_match(token)? {
-                    Ok(Keyword(str[1..].to_string()))
+                    Ok(Value::Keyword(str[1..].to_string()))
                 } else {
-                    Ok(Symbol(str.to_string()))
+                    Ok(Value::Symbol(str.to_string()))
                 }
             }
         }
@@ -147,8 +144,8 @@ impl SeqReader<'_, '_> {
                     map.insert(key, value?);
                 }
                 None => match value? {
-                    Str(str) => key = Some(MapKey::Str(str)),
-                    Keyword(str) => key = Some(MapKey::Keyword(str)),
+                    Value::Str(str) => key = Some(MapKey::Str(str)),
+                    Value::Keyword(str) => key = Some(MapKey::Keyword(str)),
                     _ => return Err(Error::InvalidMapKeyType),
                 },
             }

@@ -2,12 +2,13 @@
 
 use std::io::{stdin, stdout, Write};
 
-use shtml::rep;
+use shtml::{env::Env, rep};
 
 fn main() {
     let stdin = stdin();
     let mut stdout = stdout();
     let mut input = String::new();
+    let env = Env::top_level();
 
     loop {
         print!("user> ");
@@ -22,7 +23,7 @@ fn main() {
             }
         }
 
-        match rep(&input) {
+        match rep(env.clone(), &input) {
             Ok(()) => {}
             Err(e) => eprintln!("{e}"),
         }
