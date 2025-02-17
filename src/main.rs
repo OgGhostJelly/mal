@@ -13,15 +13,15 @@ fn main() {
 
         input.clear();
         match stdin.read_line(&mut input) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => {
                 eprintln!("{e}");
                 continue;
-            },
+            }
         }
 
         match rep(&input) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => eprintln!("{e}"),
         }
     }
