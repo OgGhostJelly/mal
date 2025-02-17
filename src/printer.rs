@@ -46,4 +46,35 @@ fn escape_str(str: &str) -> String {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use crate::types::{MapKey, Value};
+
+    #[test]
+    fn printing() {
+        assert_eq!(
+            Value::Str("my \"cool\" string".into()).to_string(),
+            r#""my \"cool\" string""#,
+        );
+
+        assert_eq!(
+            Value::List(vec![
+                Value::Symbol("+".into()),
+                Value::Int(123),
+                Value::Vector(vec![Value::Bool(true), Value::Bool(false)]),
+                Value::Nil,
+            ])
+            .to_string(),
+            "(+ 123 [true false] nil)",
+        );
+
+        let str = Value::Map(
+            [
+                (MapKey::Keyword("a".into()), Value::Nil),
+                (MapKey::Keyword("b".into()), Value::Int(2)),
+            ]
+            .into(),
+        )
+        .to_string();
+        assert!(str == "{:a nil :b 2}" || str == "{:b 2 :a nil}");
+    }
+}
