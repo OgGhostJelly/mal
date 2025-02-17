@@ -20,9 +20,9 @@ pub enum Error {
     #[error("invalid map key type, map keys can only be string type")]
     InvalidMapKeyType,
     #[error(transparent)]
-    PCRE(#[from] pcre2::Error),
+    Pcre(#[from] pcre2::Error),
     #[error(transparent)]
-    NumberParseError(#[from] ParseIntError),
+    NumberParse(#[from] ParseIntError),
     #[error(transparent)]
     InvalidUtf8(#[from] Utf8Error),
 }
@@ -58,9 +58,9 @@ impl Reader<'_> {
 impl Reader<'_> {
     pub fn read_form(&mut self) -> Result<Value> {
         let val = match self.peek() {
-            b"(" => Ok(List(SeqReader::new(self, b")").to_vec()?)),
-            b"[" => Ok(Vector(SeqReader::new(self, b"]").to_vec()?)),
-            b"{" => Ok(Map(SeqReader::new(self, b"}").to_map()?)),
+            b"(" => Ok(List(SeqReader::new(self, b")").into_vec()?)),
+            b"[" => Ok(Vector(SeqReader::new(self, b"]").into_vec()?)),
+            b"{" => Ok(Map(SeqReader::new(self, b"}").into_map()?)),
             _ => self.read_atom(),
         }?;
         Ok(val)
@@ -116,7 +116,7 @@ impl<'a, 'b> SeqReader<'a, 'b> {
 }
 
 impl SeqReader<'_, '_> {
-    pub fn to_vec(self) -> Result<Vec<Value>> {
+    pub fn into_vec(self) -> Result<Vec<Value>> {
         let mut vec = vec![];
         for value in self {
             vec.push(value?);
@@ -124,7 +124,7 @@ impl SeqReader<'_, '_> {
         Ok(vec)
     }
 
-    pub fn to_map(self) -> Result<HashMap<MapKey, Value>> {
+    pub fn into_map(self) -> Result<HashMap<MapKey, Value>> {
         let mut map = HashMap::new();
         let mut key = None;
         for value in self {
@@ -175,7 +175,7 @@ pub fn tokenize(str: &str) -> Result<Vec<&[u8]>> {
 
 pub fn read_str(str: &str) -> Result<Value> {
     let mut reader = Reader::new(tokenize(str)?);
-    Ok(reader.read_form()?)
+    reader.read_form()
 }
 
 #[cfg(test)]

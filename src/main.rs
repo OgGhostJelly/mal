@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 use std::io::{stdin, stdout, Write};
 
 use shtml::rep;

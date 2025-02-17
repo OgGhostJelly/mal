@@ -4,7 +4,7 @@ use crate::Value;
 
 pub fn write_value(o: &mut impl Write, value: &Value) -> fmt::Result {
     match value {
-        Value::List(values) => write_seq(o, values.into_iter(), '(', ')'),
+        Value::List(values) => write_seq(o, values.iter(), '(', ')'),
         Value::Symbol(sym) => o.write_str(sym),
         Value::Int(num) => o.write_str(&num.to_string()),
         Value::Bool(true) => o.write_str("true"),
@@ -12,20 +12,17 @@ pub fn write_value(o: &mut impl Write, value: &Value) -> fmt::Result {
         Value::Nil => o.write_str("nil"),
         Value::Str(str) => write!(o, "\"{}\"", escape_str(str)),
         Value::Keyword(str) => write!(o, ":{str}"),
-        Value::Vector(values) => write_seq(o, values.into_iter(), '[', ']'),
+        Value::Vector(values) => write_seq(o, values.iter(), '[', ']'),
         Value::Map(map) => write_seq(
             o,
-            map.into_iter().flat_map(|(a, b)| {
-                let val: [Box<dyn Display>; 2] = [Box::new(a), Box::new(b)];
-                val
-            }),
+            map.iter().flat_map(|(a, b)| [a.to_string(), b.to_string()]),
             '{',
             '}',
         ),
     }
 }
 
-fn write_seq<'a>(
+fn write_seq(
     o: &mut impl Write,
     iter: impl Iterator<Item = impl Display>,
     begin: char,

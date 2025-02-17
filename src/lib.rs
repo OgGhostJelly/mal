@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 use types::Value;
 
 mod printer;
@@ -19,6 +21,6 @@ fn print(inp: Value) {
 }
 
 pub fn rep(inp: &str) -> Result<()> {
-    print(eval(read(&inp)?));
+    print(eval(read(inp)?));
     Ok(())
 }
