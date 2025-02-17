@@ -1,6 +1,10 @@
 use core::str;
 use lazy_static::lazy_static;
-use std::{collections::HashMap, num::ParseIntError, str::Utf8Error};
+use std::{
+    collections::{HashMap, LinkedList},
+    num::ParseIntError,
+    str::Utf8Error,
+};
 
 use pcre2::bytes::Regex;
 
@@ -17,8 +21,10 @@ pub enum Error {
     UnmatchedLeftParenthesis,
     #[error("unmatched right parenthesis")]
     UnmatchedRightParenthesis,
-    #[error("invalid map key type, map keys can only be string type")]
+    #[error("invalid map key type, map keys can only be string or keyword type")]
     InvalidMapKeyType,
+    #[error("map key does not have a corresponding value")]
+    MismatchedMapKey,
     #[error(transparent)]
     Pcre(#[from] pcre2::Error),
     #[error(transparent)]
@@ -58,7 +64,7 @@ impl Reader<'_> {
 impl Reader<'_> {
     pub fn read_form(&mut self) -> Result<Value> {
         let val = match self.peek() {
-            b"(" => Ok(List(SeqReader::new(self, b")").into_vec()?)),
+            b"(" => Ok(List(SeqReader::new(self, b")").into_list()?)),
             b"[" => Ok(Vector(SeqReader::new(self, b"]").into_vec()?)),
             b"{" => Ok(Map(SeqReader::new(self, b"}").into_map()?)),
             _ => self.read_atom(),
@@ -116,6 +122,14 @@ impl<'a, 'b> SeqReader<'a, 'b> {
 }
 
 impl SeqReader<'_, '_> {
+    pub fn into_list(self) -> Result<LinkedList<Value>> {
+        let mut list = LinkedList::new();
+        for value in self {
+            list.push_back(value?);
+        }
+        Ok(list)
+    }
+
     pub fn into_vec(self) -> Result<Vec<Value>> {
         let mut vec = vec![];
         for value in self {
@@ -138,6 +152,9 @@ impl SeqReader<'_, '_> {
                     _ => return Err(Error::InvalidMapKeyType),
                 },
             }
+        }
+        if key.is_some() {
+            return Err(Error::MismatchedMapKey);
         }
         Ok(map)
     }
@@ -207,15 +224,21 @@ mod test {
         let value = try_read_str("  ( +  1  (+ \"my \\\\ cool \\\" string\\n\" 3) ) ");
         assert_eq!(
             value,
-            Value::List(vec![
-                Value::Symbol("+".into()),
-                Value::Int(1),
-                Value::List(vec![
+            Value::List(
+                [
                     Value::Symbol("+".into()),
-                    Value::Str("my \\ cool \" string\n".into()),
-                    Value::Int(3),
-                ]),
-            ])
+                    Value::Int(1),
+                    Value::List(
+                        [
+                            Value::Symbol("+".into()),
+                            Value::Str("my \\ cool \" string\n".into()),
+                            Value::Int(3),
+                        ]
+                        .into()
+                    ),
+                ]
+                .into()
+            )
         );
 
         let value = try_read_str("  123  ");
@@ -231,7 +254,7 @@ mod test {
         assert_eq!(value, Value::Symbol("abc".into()));
 
         let value = try_read_str("(:abc)");
-        assert_eq!(value, Value::List(vec![Value::Keyword("abc".into()),]));
+        assert_eq!(value, Value::List([Value::Keyword("abc".into()),].into()));
 
         let value = try_read_str("{\"a\" 1 :b 2 \"c\" 3}");
         assert_eq!(
@@ -247,6 +270,7 @@ mod test {
         );
 
         read_str(" {1  2} ").expect_err("only string keys should be allowed in map");
+        read_str(" {:a} ").expect_err("mismatched keys in map should fail");
     }
 
     fn try_read_str(str: &str) -> Value {

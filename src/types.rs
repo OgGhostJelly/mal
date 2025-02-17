@@ -1,10 +1,13 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::{HashMap, LinkedList},
+    fmt,
+};
 
-use crate::printer;
+use crate::{printer, Error};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Value {
-    List(Vec<Value>),
+    List(LinkedList<Value>),
     Vector(Vec<Value>),
     Map(HashMap<MapKey, Value>),
     Symbol(String),
@@ -12,6 +15,7 @@ pub enum Value {
     Keyword(String),
     Int(i64),
     Bool(bool),
+    Func(&'static str, fn(Vec<Value>) -> Result<Value, Error>),
     Nil,
 }
 

@@ -19,6 +19,7 @@ pub fn write_value(o: &mut impl Write, value: &Value) -> fmt::Result {
             '{',
             '}',
         ),
+        Value::Func(name, _) => write!(o, "<function:{name}>"),
     }
 }
 
@@ -57,12 +58,15 @@ mod test {
         );
 
         assert_eq!(
-            Value::List(vec![
-                Value::Symbol("+".into()),
-                Value::Int(123),
-                Value::Vector(vec![Value::Bool(true), Value::Bool(false)]),
-                Value::Nil,
-            ])
+            Value::List(
+                [
+                    Value::Symbol("+".into()),
+                    Value::Int(123),
+                    Value::Vector(vec![Value::Bool(true), Value::Bool(false)]),
+                    Value::Nil,
+                ]
+                .into()
+            )
             .to_string(),
             "(+ 123 [true false] nil)",
         );
