@@ -235,8 +235,11 @@ fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
 }
 
 fn r#do(env: &Env, ast: &[MalVal]) -> MalRet {
-    let mut ret = MalVal::Nil;
-    for value in ast {
+    if ast.is_empty() {
+        return Err(Error::MissingParams.into());
+    }
+    let mut ret = env.eval(&ast[0])?;
+    for value in &ast[1..] {
         ret = env.eval(value)?;
     }
     Ok(ret)
