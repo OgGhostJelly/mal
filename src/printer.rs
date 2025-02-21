@@ -19,7 +19,9 @@ pub fn write_value(o: &mut impl Write, value: &Value) -> fmt::Result {
             '{',
             '}',
         ),
-        Value::Func(name, _) => write!(o, "<function:{name}>"),
+        Value::Func(name, _) => write!(o, "#<function:{name}>"),
+        Value::Ref(value) => write_value(o, &value),
+        Value::Closure(_) => write!(o, "#<function>"),
     }
 }
 

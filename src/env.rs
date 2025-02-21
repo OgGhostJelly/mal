@@ -1,12 +1,8 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, LinkedList},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::types::Value;
+use crate::types::{Args, Closure, MacroArgs, Value};
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result = std::result::Result<Value, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -20,10 +16,13 @@ pub enum Error {
     TypeMismatch,
     #[error("not enough arguments")]
     NotEnoughArgs,
+    #[error("too many arguments")]
+    TooManyArgs,
     #[error("the first argument of def! must be a symbol")]
     NotSymbol,
 }
 
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Env {
     outer: Option<Rc<Env>>,
     data: RefCell<HashMap<String, Value>>,
@@ -51,7 +50,7 @@ impl Env {
 }
 
 impl Env {
-    pub fn get(&self, sym: String) -> Result<Value> {
+    pub fn get(&self, sym: String) -> Result {
         match self.data.borrow().get(&sym) {
             Some(value) => Ok(value.clone()),
             None => match &self.outer {
@@ -61,13 +60,19 @@ impl Env {
         }
     }
 
-    pub fn set(&self, key: String, value: Value) {
-        self.data.borrow_mut().insert(key, value);
+    pub fn set(&self, key: String, value: Value) -> Value {
+        let value = Value::Ref(Rc::new(value));
+        self.data.borrow_mut().insert(key, value.clone());
+        value
     }
 }
 
 impl Env {
-    pub fn eval(self: Rc<Env>, ast: Value) -> Result<Value> {
+    pub fn eval(self: &Rc<Env>, ast: Value) -> Result {
+        self.clone().eval_inner(ast)
+    }
+
+    pub fn eval_inner(self: Rc<Env>, ast: Value) -> Result {
         match ast {
             Value::Symbol(sym) => Ok(self.get(sym)?),
             Value::List(mut list) => {
@@ -77,35 +82,44 @@ impl Env {
 
                 if let Value::Symbol(ref op) = op {
                     if op == "def!" {
-                        return def_(self, list);
+                        return def_(self, MacroArgs::new(list));
                     } else if op == "let*" {
-                        return let_(self, list);
+                        return let_(self, MacroArgs::new(list));
+                    } else if op == "do" {
+                        return do_(self, MacroArgs::new(list));
+                    } else if op == "if" {
+                        return if_(self, MacroArgs::new(list));
+                    } else if op == "fn*" {
+                        return fn_(self, MacroArgs::new(list));
                     }
                 }
 
-                let op = match self.clone().eval(op)? {
-                    Value::Func(_, f) => f,
+                let x = self.eval(op)?;
+
+                let op: Box<dyn Fn(Args) -> Result> = match x.traverse_ref() {
+                    Value::Func(_, f) => Box::new(f),
+                    Value::Closure(closure) => Box::new(move |args| closure.apply(args)),
                     _ => return Err(Error::NotCallable),
                 };
 
                 let mut args = Vec::new();
                 for ele in list {
-                    args.push(self.clone().eval(ele)?);
+                    args.push(self.eval(ele)?);
                 }
 
-                Ok(op(args)?)
+                Ok(op(Args::new(args))?)
             }
             Value::Vector(vec) => {
                 let mut new_vec = Vec::with_capacity(vec.len());
                 for value in vec {
-                    new_vec.push(self.clone().eval(value)?);
+                    new_vec.push(self.eval(value)?);
                 }
                 Ok(Value::Vector(new_vec))
             }
             Value::Map(map) => {
                 let mut new_map = HashMap::with_capacity(map.len());
                 for (key, value) in map {
-                    new_map.insert(key, self.clone().eval(value)?);
+                    new_map.insert(key, self.eval(value)?);
                 }
                 Ok(Value::Map(new_map))
             }
@@ -118,7 +132,7 @@ macro_rules! num_op {
     ( $args:expr, $op:tt ) => {
         let mut args = $args;
 
-        let Some(mut sum) = args.pop() else {
+        let Some(mut sum) = args.next() else {
             return Ok(Value::Nil);
         };
 
@@ -133,43 +147,34 @@ macro_rules! num_op {
     };
 }
 
-fn add(args: Vec<Value>) -> Result<Value> {
+fn add(args: Args) -> Result {
     num_op!(args, +);
 }
 
-fn sub(args: Vec<Value>) -> Result<Value> {
+fn sub(args: Args) -> Result {
     num_op!(args, -);
 }
 
-fn mul(args: Vec<Value>) -> Result<Value> {
+fn mul(args: Args) -> Result {
     num_op!(args, *);
 }
 
-fn div(args: Vec<Value>) -> Result<Value> {
+fn div(args: Args) -> Result {
     num_op!(args, /);
 }
 
-fn def_(env: Rc<Env>, mut args: LinkedList<Value>) -> Result<Value> {
-    let Value::Symbol(sym) = args.pop_front().ok_or(Error::NotEnoughArgs)? else {
+fn def_(env: Rc<Env>, mut args: MacroArgs) -> Result {
+    let [Value::Symbol(sym), val] = args.grab().ok_or(Error::NotEnoughArgs)? else {
         return Err(Error::NotSymbol);
     };
-    let val = args.pop_front().ok_or(Error::NotEnoughArgs)?;
-    let val = env.clone().eval(val)?;
-    // TODO: try remove this clone
-    env.set(sym, val.clone());
-    Ok(val)
+    Ok(env.set(sym, env.eval(val)?))
 }
 
-fn let_(env: Rc<Env>, mut args: LinkedList<Value>) -> Result<Value> {
-    let Some(bindings) = args.pop_front() else {
-        return Err(Error::NotEnoughArgs);
-    };
-    // TODO: when `do` is implemented change this to use the rest of the let* body as a do
-    let Some(ast) = args.pop_front() else {
-        return Err(Error::NotEnoughArgs);
-    };
-    let Value::Vector(bindings) = bindings else {
-        return Err(Error::TypeMismatch);
+fn let_(env: Rc<Env>, mut args: MacroArgs) -> Result {
+    let bindings = match args.grab().ok_or(Error::NotEnoughArgs)? {
+        [Value::Vector(vec)] => vec,
+        [Value::List(list)] => list.into_iter().collect(),
+        _ => return Err(Error::TypeMismatch),
     };
 
     let env = Env::new(env);
@@ -187,5 +192,47 @@ fn let_(env: Rc<Env>, mut args: LinkedList<Value>) -> Result<Value> {
         }
     }
 
-    env.eval(ast)
+    do_(env, args)
+}
+
+fn do_(env: Rc<Env>, args: MacroArgs) -> Result {
+    let mut last = None;
+    for ele in args {
+        last = Some(env.eval(ele)?);
+    }
+    Ok(last.unwrap_or(Value::Nil))
+}
+
+fn if_(env: Rc<Env>, mut args: MacroArgs) -> Result {
+    let [cond, truthy, falsey] = args.grab().ok_or(Error::NotEnoughArgs)?;
+
+    let cond = match env.eval(cond)? {
+        Value::Bool(bool) => bool,
+        Value::Nil => false,
+        _ => true,
+    };
+
+    if cond {
+        env.eval(truthy)
+    } else {
+        env.eval(falsey)
+    }
+}
+
+fn fn_(env: Rc<Env>, mut args: MacroArgs) -> Result {
+    let [Value::List(binds_ast)] = args.grab().ok_or(Error::NotEnoughArgs)? else {
+        return Err(Error::TypeMismatch);
+    };
+    let body = Rc::new(Value::List(args.to_ast()));
+
+    let mut binds = Vec::new();
+    for value in binds_ast {
+        if let Value::Symbol(sym) = value {
+            binds.push(sym);
+        } else {
+            return Err(Error::TypeMismatch);
+        }
+    }
+
+    Ok(Value::Closure(Closure { env, body, binds }))
 }
