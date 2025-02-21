@@ -1,61 +1,58 @@
-use std::{
-    collections::{HashMap, LinkedList},
-    fmt,
-    rc::Rc,
-};
+use std::{collections::HashMap, fmt, rc::Rc};
 
-use crate::{
-    env::{Env, Error, Result},
-    printer,
-};
+use crate::{env, printer, Error};
+
+pub type MalRet = Result<MalVal, Error>;
+pub type MalArgs = Vec<MalVal>;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub enum Value {
-    List(LinkedList<Value>),
-    Vector(Vec<Value>),
-    Map(HashMap<MapKey, Value>),
-    Symbol(String),
+pub enum MalVal {
+    /// NOTE: for performance reasons the order of the Vec is reversed
+    ///       so the last item in the list is at index 0 and the first item is at index vec.len()
+    List(Rc<Vec<MalVal>>),
+    Vector(Rc<Vec<MalVal>>),
+    Map(Rc<HashMap<MapKey, MalVal>>),
+    Sym(String),
     Str(String),
-    Keyword(String),
+    Kwd(String),
     Int(i64),
     Bool(bool),
-    Func(&'static str, fn(Args) -> Result),
-    Closure(Closure),
+    Func(fn(MalArgs) -> MalRet),
     Nil,
-    Ref(Rc<Value>),
 }
 
-impl Value {
-    pub fn traverse_ref(&self) -> &Value {
+impl MalVal {
+    pub const TN_LIST: &'static str = "list";
+    pub const TN_VECTOR: &'static str = "vector";
+    pub const TN_MAP: &'static str = "map";
+    pub const TN_SYMBOL: &'static str = "symbol";
+    pub const TN_STRING: &'static str = "string";
+    pub const TN_KEYWORD: &'static str = "keyword";
+    pub const TN_INT: &'static str = "int";
+    pub const TN_BOOL: &'static str = "bool";
+    pub const TN_FUNCTION: &'static str = "function";
+    pub const TN_NIL: &'static str = "nil";
+
+    pub fn type_name(&self) -> &'static str {
         match self {
-            Value::Ref(value) => value.as_ref(),
-            _ => self,
+            MalVal::List(_) => Self::TN_LIST,
+            MalVal::Vector(_) => Self::TN_VECTOR,
+            MalVal::Map(_) => Self::TN_MAP,
+            MalVal::Sym(_) => Self::TN_SYMBOL,
+            MalVal::Str(_) => Self::TN_STRING,
+            MalVal::Kwd(_) => Self::TN_KEYWORD,
+            MalVal::Int(_) => Self::TN_INT,
+            MalVal::Bool(_) => Self::TN_BOOL,
+            MalVal::Func(_) => Self::TN_FUNCTION,
+            MalVal::Nil => Self::TN_NIL,
         }
     }
-}
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Closure {
-    pub env: Rc<Env>,
-    pub binds: Vec<String>,
-    pub body: Rc<Value>,
-}
-
-impl Closure {
-    pub fn apply(&self, args: Args) -> Result {
-        let env = Env::new(self.env.clone());
-
-        if args.args.len() < self.binds.len() {
-            return Err(Error::NotEnoughArgs);
-        } else if args.args.len() > self.binds.len() {
-            return Err(Error::TooManyArgs);
+    pub fn to_int(&self) -> Result<&i64, env::Error> {
+        match self {
+            MalVal::Int(i) => Ok(i),
+            _ => Err(env::Error::TypeMismatch(Self::TN_INT, self.type_name())),
         }
-
-        for (bind, expr) in self.binds.iter().zip(args) {
-            env.set(bind.clone(), expr);
-        }
-
-        Ok(env.eval(Value::Ref(self.body.clone()))?)
     }
 }
 
@@ -68,93 +65,15 @@ pub enum MapKey {
 impl fmt::Display for MapKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
-            MapKey::Str(str) => Value::Str(str.clone()),
-            MapKey::Keyword(str) => Value::Keyword(str.clone()),
+            MapKey::Str(str) => MalVal::Str(str.clone()),
+            MapKey::Keyword(str) => MalVal::Kwd(str.clone()),
         };
         printer::write_value(f, &value)
     }
 }
 
-impl fmt::Display for Value {
+impl fmt::Display for MalVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         printer::write_value(f, self)
-    }
-}
-
-pub struct Args {
-    args: Vec<Value>,
-}
-
-impl Args {
-    pub fn new(args: Vec<Value>) -> Self {
-        Self {
-            args: args.into_iter().rev().collect(),
-        }
-    }
-
-    pub fn next(&mut self) -> Option<Value> {
-        self.args.pop()
-    }
-
-    pub fn take<const N: usize>(mut self) -> Option<[Value; N]> {
-        if self.args.len() < N {
-            return None;
-        }
-
-        let mut arr = [const { None }; N];
-
-        for i in 0..N {
-            arr[i] = self.args.pop();
-        }
-
-        Some(arr.map(|value| value.expect("all array values should be filled")))
-    }
-}
-
-impl Iterator for Args {
-    type Item = Value;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next()
-    }
-}
-
-pub struct MacroArgs {
-    args: LinkedList<Value>,
-}
-
-impl MacroArgs {
-    pub fn new(args: LinkedList<Value>) -> Self {
-        Self { args }
-    }
-
-    pub fn to_ast(self) -> LinkedList<Value> {
-        self.args
-    }
-
-    pub fn next(&mut self) -> Option<Value> {
-        self.args.pop_front()
-    }
-
-    pub fn grab<const N: usize>(&mut self) -> Option<[Value; N]> {
-        if self.args.len() < N {
-            return None;
-        }
-
-        let mut arr = [const { None }; N];
-
-        for i in 0..N {
-            arr[i] = self.args.pop_front();
-        }
-
-        Some(arr.map(|value| value.expect("all array values should be filled")))
-    }
-}
-
-impl Iterator for MacroArgs {
-    type Item = Value;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next()
     }
 }

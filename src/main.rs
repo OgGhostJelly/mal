@@ -8,7 +8,7 @@ fn main() {
     let stdin = stdin();
     let mut stdout = stdout();
     let mut input = String::new();
-    let env = Env::top_level();
+    let env = Env::default();
 
     loop {
         print!("user> ");

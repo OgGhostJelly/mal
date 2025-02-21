@@ -1,27 +1,25 @@
 use std::fmt::{self, Display, Write};
 
-use crate::Value;
+use crate::MalVal;
 
-pub fn write_value(o: &mut impl Write, value: &Value) -> fmt::Result {
+pub fn write_value(o: &mut impl Write, value: &MalVal) -> fmt::Result {
     match value {
-        Value::List(values) => write_seq(o, values.iter(), '(', ')'),
-        Value::Symbol(sym) => o.write_str(sym),
-        Value::Int(num) => o.write_str(&num.to_string()),
-        Value::Bool(true) => o.write_str("true"),
-        Value::Bool(false) => o.write_str("false"),
-        Value::Nil => o.write_str("nil"),
-        Value::Str(str) => write!(o, "\"{}\"", escape_str(str)),
-        Value::Keyword(str) => write!(o, ":{str}"),
-        Value::Vector(values) => write_seq(o, values.iter(), '[', ']'),
-        Value::Map(map) => write_seq(
+        MalVal::List(values) => write_seq(o, values.iter(), '(', ')'),
+        MalVal::Sym(sym) => o.write_str(sym),
+        MalVal::Int(num) => o.write_str(&num.to_string()),
+        MalVal::Bool(true) => o.write_str("true"),
+        MalVal::Bool(false) => o.write_str("false"),
+        MalVal::Nil => o.write_str("nil"),
+        MalVal::Str(str) => write!(o, "\"{}\"", escape_str(str)),
+        MalVal::Kwd(str) => write!(o, ":{str}"),
+        MalVal::Vector(values) => write_seq(o, values.iter(), '[', ']'),
+        MalVal::Map(map) => write_seq(
             o,
             map.iter().flat_map(|(a, b)| [a.to_string(), b.to_string()]),
             '{',
             '}',
         ),
-        Value::Func(name, _) => write!(o, "#<function:{name}>"),
-        Value::Ref(value) => write_value(o, &value),
-        Value::Closure(_) => write!(o, "#<function>"),
+        MalVal::Func(_) => write!(o, "#<function>"),
     }
 }
 
@@ -50,22 +48,24 @@ fn escape_str(str: &str) -> String {
 
 #[cfg(test)]
 mod test {
-    use crate::types::{MapKey, Value};
+    use std::rc::Rc;
+
+    use crate::types::{MalVal, MapKey};
 
     #[test]
     fn printing() {
         assert_eq!(
-            Value::Str("my \"cool\" string".into()).to_string(),
+            MalVal::Str("my \"cool\" string".into()).to_string(),
             r#""my \"cool\" string""#,
         );
 
         assert_eq!(
-            Value::List(
-                [
-                    Value::Symbol("+".into()),
-                    Value::Int(123),
-                    Value::Vector(vec![Value::Bool(true), Value::Bool(false)]),
-                    Value::Nil,
+            MalVal::List(
+                vec![
+                    MalVal::Sym("+".into()),
+                    MalVal::Int(123),
+                    MalVal::Vector(vec![MalVal::Bool(true), MalVal::Bool(false)].into()),
+                    MalVal::Nil,
                 ]
                 .into()
             )
@@ -73,13 +73,13 @@ mod test {
             "(+ 123 [true false] nil)",
         );
 
-        let str = Value::Map(
+        let str = MalVal::Map(Rc::new(
             [
-                (MapKey::Keyword("a".into()), Value::Nil),
-                (MapKey::Keyword("b".into()), Value::Int(2)),
+                (MapKey::Keyword("a".into()), MalVal::Nil),
+                (MapKey::Keyword("b".into()), MalVal::Int(2)),
             ]
             .into(),
-        )
+        ))
         .to_string();
         assert!(str == "{:a nil :b 2}" || str == "{:b 2 :a nil}");
     }

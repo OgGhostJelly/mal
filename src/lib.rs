@@ -1,9 +1,7 @@
 #![allow(clippy::pedantic)]
 
-use std::rc::Rc;
-
 use env::Env;
-use types::Value;
+use types::MalVal;
 
 pub mod env;
 mod printer;
@@ -14,15 +12,15 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error(transparent)]
+    #[error("syntax error: {0}")]
     Reader(#[from] reader::Error),
     #[error(transparent)]
     Env(#[from] env::Error),
 }
 
-pub fn rep(env: Rc<Env>, inp: &str) -> Result<()> {
+pub fn rep(env: Env, inp: &str) -> Result<()> {
     let ast = reader::read_str(inp)?;
-    let ret = env.eval(ast)?;
+    let ret = env.eval(&ast)?;
     println!("> {ret}");
     Ok(())
 }

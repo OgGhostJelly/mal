@@ -1,238 +1,162 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
-use crate::types::{Args, Closure, MacroArgs, Value};
+use crate::types::{MalArgs, MalRet, MalVal};
 
-pub type Result = std::result::Result<Value, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("'{0}' not found")]
     NotFound(String),
-    #[error("expected symbol, got {0}")]
-    ExpectedSymbol(Value),
-    #[error("cannot call a non-function")]
-    NotCallable,
-    #[error("invalid type")]
-    TypeMismatch,
-    #[error("not enough arguments")]
-    NotEnoughArgs,
-    #[error("too many arguments")]
-    TooManyArgs,
-    #[error("the first argument of def! must be a symbol")]
-    NotSymbol,
+    #[error("type mismatch, expected '{0}' got '{1}'")]
+    TypeMismatch(&'static str, &'static str),
+    #[error("cannot call non-function type '{0}'")]
+    CannotCall(&'static str),
+    #[error("missing parameters")]
+    MissingParams,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Env {
-    outer: Option<Rc<Env>>,
-    data: RefCell<HashMap<String, Value>>,
+pub type Env = Rc<EnvInner>;
+
+pub struct EnvInner {
+    data: HashMap<String, MalVal>,
+    outer: Option<Env>,
 }
 
-impl Env {
-    pub fn top_level() -> Rc<Self> {
-        Rc::new(Self {
+impl EnvInner {
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::new(),
             outer: None,
-            data: RefCell::new(HashMap::from([
-                ("+".into(), Value::Func("+", add)),
-                ("-".into(), Value::Func("-", sub)),
-                ("*".into(), Value::Func("*", mul)),
-                ("/".into(), Value::Func("/", div)),
-            ])),
-        })
-    }
-
-    pub fn new(env: Rc<Self>) -> Rc<Self> {
-        Rc::new(Self {
-            outer: Some(env),
-            data: RefCell::new(HashMap::new()),
-        })
-    }
-}
-
-impl Env {
-    pub fn get(&self, sym: String) -> Result {
-        match self.data.borrow().get(&sym) {
-            Some(value) => Ok(value.clone()),
-            None => match &self.outer {
-                Some(env) => env.get(sym),
-                None => Err(Error::NotFound(sym)),
-            },
         }
     }
+}
 
-    pub fn set(&self, key: String, value: Value) -> Value {
-        let value = Value::Ref(Rc::new(value));
-        self.data.borrow_mut().insert(key, value.clone());
-        value
+impl Default for EnvInner {
+    fn default() -> Self {
+        let mut env = Self::new();
+
+        env.set("+".into(), MalVal::Func(add));
+        env.set("-".into(), MalVal::Func(sub));
+        env.set("*".into(), MalVal::Func(mul));
+        env.set("/".into(), MalVal::Func(div));
+
+        env
     }
 }
 
-impl Env {
-    pub fn eval(self: &Rc<Env>, ast: Value) -> Result {
-        self.clone().eval_inner(ast)
-    }
-
-    pub fn eval_inner(self: Rc<Env>, ast: Value) -> Result {
+impl EnvInner {
+    pub fn eval(self: &Env, ast: &MalVal) -> MalRet {
         match ast {
-            Value::Symbol(sym) => Ok(self.get(sym)?),
-            Value::List(mut list) => {
-                let Some(op) = list.pop_front() else {
-                    return Ok(Value::List(list));
-                };
-
-                if let Value::Symbol(ref op) = op {
-                    if op == "def!" {
-                        return def_(self, MacroArgs::new(list));
-                    } else if op == "let*" {
-                        return let_(self, MacroArgs::new(list));
-                    } else if op == "do" {
-                        return do_(self, MacroArgs::new(list));
-                    } else if op == "if" {
-                        return if_(self, MacroArgs::new(list));
-                    } else if op == "fn*" {
-                        return fn_(self, MacroArgs::new(list));
-                    }
+            MalVal::List(ast) => {
+                if ast.is_empty() {
+                    return Ok(MalVal::List(ast.clone()));
                 }
 
-                let x = self.eval(op)?;
-
-                let op: Box<dyn Fn(Args) -> Result> = match x.traverse_ref() {
-                    Value::Func(_, f) => Box::new(f),
-                    Value::Closure(closure) => Box::new(move |args| closure.apply(args)),
-                    _ => return Err(Error::NotCallable),
+                let MalVal::Sym(ref sym) = ast[0] else {
+                    return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, ast[0].type_name()).into());
                 };
+
+                let op = self.get(sym)?;
 
                 let mut args = Vec::new();
-                for ele in list {
-                    args.push(self.eval(ele)?);
+                for value in &ast[1..] {
+                    args.push(self.eval(value)?);
                 }
 
-                Ok(op(Args::new(args))?)
+                Ok(self.apply(op, args)?)
             }
-            Value::Vector(vec) => {
+            
+            MalVal::Sym(sym) => Ok(self.get(&sym)?.clone()),
+
+            MalVal::Vector(vec) => {
                 let mut new_vec = Vec::with_capacity(vec.len());
-                for value in vec {
+                for value in vec.iter() {
                     new_vec.push(self.eval(value)?);
                 }
-                Ok(Value::Vector(new_vec))
+                Ok(MalVal::List(Rc::new(new_vec)))
             }
-            Value::Map(map) => {
+
+            MalVal::Map(map) => {
                 let mut new_map = HashMap::with_capacity(map.len());
-                for (key, value) in map {
-                    new_map.insert(key, self.eval(value)?);
+                for (key, value) in map.iter() {
+                    new_map.insert(key.clone(), self.eval(value)?);
                 }
-                Ok(Value::Map(new_map))
+                Ok(MalVal::Map(Rc::new(new_map)))
             }
-            _ => Ok(ast),
+
+            // Types that evaluate to themselves:
+            MalVal::Func(_)
+            | MalVal::Str(_)
+            | MalVal::Kwd(_)
+            | MalVal::Int(_)
+            | MalVal::Bool(_)
+            | MalVal::Nil => Ok(ast.clone()),
+        }
+    }
+
+    pub fn apply(&self, op: &MalVal, args: Vec<MalVal>) -> MalRet {
+        match op {
+            MalVal::Sym(sym) => Ok(self.get(sym).cloned()?),
+            MalVal::Func(f) => f(args),
+            MalVal::List(_)
+            | MalVal::Vector(_)
+            | MalVal::Map(_)
+            | MalVal::Str(_)
+            | MalVal::Kwd(_)
+            | MalVal::Int(_)
+            | MalVal::Bool(_)
+            | MalVal::Nil => Err(Error::CannotCall(op.type_name()).into()),
         }
     }
 }
 
-macro_rules! num_op {
+impl EnvInner {
+    pub fn set(&mut self, key: String, value: MalVal) {
+        self.data.insert(key, value);
+    }
+
+    pub fn get(&self, key: &str) -> Result<&MalVal> {
+        if let Some(value) = self.data.get(key) {
+            return Ok(value);
+        }
+
+        match self.outer {
+            Some(ref outer) => outer.get(key),
+            None => Err(Error::NotFound(key.into())),
+        }
+    }
+}
+
+macro_rules! impl_sumop {
     ( $args:expr, $op:tt ) => {
-        let mut args = $args;
-
-        let Some(mut sum) = args.next() else {
-            return Ok(Value::Nil);
-        };
-
-        for value in args {
-            match (sum, value) {
-                (Value::Int(lhs), Value::Int(rhs)) => sum = Value::Int(lhs $op rhs),
-                _ => return Err(Error::TypeMismatch)
-            };
-        }
-
-        return Ok(sum);
-    };
-}
-
-fn add(args: Args) -> Result {
-    num_op!(args, +);
-}
-
-fn sub(args: Args) -> Result {
-    num_op!(args, -);
-}
-
-fn mul(args: Args) -> Result {
-    num_op!(args, *);
-}
-
-fn div(args: Args) -> Result {
-    num_op!(args, /);
-}
-
-fn def_(env: Rc<Env>, mut args: MacroArgs) -> Result {
-    let [Value::Symbol(sym), val] = args.grab().ok_or(Error::NotEnoughArgs)? else {
-        return Err(Error::NotSymbol);
-    };
-    Ok(env.set(sym, env.eval(val)?))
-}
-
-fn let_(env: Rc<Env>, mut args: MacroArgs) -> Result {
-    let bindings = match args.grab().ok_or(Error::NotEnoughArgs)? {
-        [Value::Vector(vec)] => vec,
-        [Value::List(list)] => list.into_iter().collect(),
-        _ => return Err(Error::TypeMismatch),
-    };
-
-    let env = Env::new(env);
-
-    let mut key = None;
-    for value in bindings {
-        match key.take() {
-            Some(key) => {
-                let Value::Symbol(key) = key else {
-                    return Err(Error::TypeMismatch);
-                };
-                env.set(key, value);
+        #[allow(clippy::assign_op_pattern)]
+        'block: {
+            let args = $args;
+            if args.is_empty() {
+                break 'block Err(Error::MissingParams.into())
             }
-            None => key = Some(value),
+            let mut sum = args[0].to_int()?.clone();
+            for i in 1..args.len() {
+                sum = sum $op args[i].to_int()?;
+            }
+            Ok(MalVal::Int(sum))
         }
-    }
-
-    do_(env, args)
-}
-
-fn do_(env: Rc<Env>, args: MacroArgs) -> Result {
-    let mut last = None;
-    for ele in args {
-        last = Some(env.eval(ele)?);
-    }
-    Ok(last.unwrap_or(Value::Nil))
-}
-
-fn if_(env: Rc<Env>, mut args: MacroArgs) -> Result {
-    let [cond, truthy, falsey] = args.grab().ok_or(Error::NotEnoughArgs)?;
-
-    let cond = match env.eval(cond)? {
-        Value::Bool(bool) => bool,
-        Value::Nil => false,
-        _ => true,
     };
-
-    if cond {
-        env.eval(truthy)
-    } else {
-        env.eval(falsey)
-    }
 }
 
-fn fn_(env: Rc<Env>, mut args: MacroArgs) -> Result {
-    let [Value::List(binds_ast)] = args.grab().ok_or(Error::NotEnoughArgs)? else {
-        return Err(Error::TypeMismatch);
-    };
-    let body = Rc::new(Value::List(args.to_ast()));
+fn add(args: MalArgs) -> MalRet {
+    impl_sumop!(args, +)
+}
 
-    let mut binds = Vec::new();
-    for value in binds_ast {
-        if let Value::Symbol(sym) = value {
-            binds.push(sym);
-        } else {
-            return Err(Error::TypeMismatch);
-        }
-    }
+fn sub(args: MalArgs) -> MalRet {
+    impl_sumop!(args, -)
+}
 
-    Ok(Value::Closure(Closure { env, body, binds }))
+fn mul(args: MalArgs) -> MalRet {
+    impl_sumop!(args, *)
+}
+
+fn div(args: MalArgs) -> MalRet {
+    impl_sumop!(args, /)
 }
