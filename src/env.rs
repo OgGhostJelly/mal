@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::HashMap, rc::Rc};
 
 use crate::types::{MalArgs, MalRet, MalVal};
 
@@ -14,27 +14,29 @@ pub enum Error {
     CannotCall(&'static str),
     #[error("missing parameters")]
     MissingParams,
+    #[error("too many parameters")]
+    TooManyParams,
 }
 
 pub type Env = Rc<EnvInner>;
 
 pub struct EnvInner {
-    data: HashMap<String, MalVal>,
+    data: RefCell<HashMap<String, MalVal>>,
     outer: Option<Env>,
 }
 
 impl EnvInner {
-    pub fn new() -> Self {
+    pub fn new(outer: Option<Env>) -> Self {
         Self {
-            data: HashMap::new(),
-            outer: None,
+            data: RefCell::new(HashMap::new()),
+            outer,
         }
     }
 }
 
 impl Default for EnvInner {
     fn default() -> Self {
-        let mut env = Self::new();
+        let env = Self::new(None);
 
         env.set("+".into(), MalVal::Func(add));
         env.set("-".into(), MalVal::Func(sub));
@@ -53,11 +55,20 @@ impl EnvInner {
                     return Ok(MalVal::List(ast.clone()));
                 }
 
-                let MalVal::Sym(ref sym) = ast[0] else {
-                    return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, ast[0].type_name()).into());
-                };
+                // handle special forms
+                if let MalVal::Sym(ref sym) = ast[0] {
+                    let ast = &ast[1..];
+                    match sym.as_str() {
+                        "def!" => return def(self, ast),
+                        "let*" => return r#let(self, ast),
+                        "do" => return r#do(self, ast),
+                        "if" => return r#if(self, ast),
+                        "fn*" => return r#fn(self, ast),
+                        _ => {}
+                    }
+                }
 
-                let op = self.get(sym)?;
+                let op = self.eval(&ast[0])?;
 
                 let mut args = Vec::new();
                 for value in &ast[1..] {
@@ -66,8 +77,8 @@ impl EnvInner {
 
                 Ok(self.apply(op, args)?)
             }
-            
-            MalVal::Sym(sym) => Ok(self.get(&sym)?.clone()),
+
+            MalVal::Sym(sym) => Ok(self.get(sym)?.clone()),
 
             MalVal::Vector(vec) => {
                 let mut new_vec = Vec::with_capacity(vec.len());
@@ -95,9 +106,9 @@ impl EnvInner {
         }
     }
 
-    pub fn apply(&self, op: &MalVal, args: Vec<MalVal>) -> MalRet {
+    pub fn apply(&self, op: MalVal, args: Vec<MalVal>) -> MalRet {
         match op {
-            MalVal::Sym(sym) => Ok(self.get(sym).cloned()?),
+            MalVal::Sym(sym) => Ok(self.get(&sym)?),
             MalVal::Func(f) => f(args),
             MalVal::List(_)
             | MalVal::Vector(_)
@@ -112,13 +123,13 @@ impl EnvInner {
 }
 
 impl EnvInner {
-    pub fn set(&mut self, key: String, value: MalVal) {
-        self.data.insert(key, value);
+    pub fn set(&self, key: String, value: MalVal) {
+        self.data.borrow_mut().insert(key, value);
     }
 
-    pub fn get(&self, key: &str) -> Result<&MalVal> {
-        if let Some(value) = self.data.get(key) {
-            return Ok(value);
+    pub fn get(&self, key: &str) -> Result<MalVal> {
+        if let Some(value) = self.data.borrow().get(key) {
+            return Ok(value.clone());
         }
 
         match self.outer {
@@ -159,4 +170,75 @@ fn mul(args: MalArgs) -> MalRet {
 
 fn div(args: MalArgs) -> MalRet {
     impl_sumop!(args, /)
+}
+
+fn def(env: &Env, ast: &[MalVal]) -> MalRet {
+    match ast.len().cmp(&2) {
+        Ordering::Less => return Err(Error::MissingParams.into()),
+        Ordering::Greater => return Err(Error::TooManyParams.into()),
+        Ordering::Equal => {}
+    }
+
+    let MalVal::Sym(key) = &ast[0] else {
+        return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, ast[0].type_name()).into());
+    };
+
+    let value = env.eval(&ast[1])?;
+    env.set(key.into(), value.clone());
+    Ok(value)
+}
+
+fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
+    if ast.is_empty() {
+        return Err(Error::MissingParams.into());
+    }
+
+    let (MalVal::List(binds) | MalVal::Vector(binds)) = &ast[0] else {
+        return Err(Error::TypeMismatch(MalVal::TN_LIST, ast[0].type_name()).into());
+    };
+
+    let env: Env = Rc::new(EnvInner::new(Some(env.clone())));
+
+    let mut key = None;
+    for value in binds.iter() {
+        match key.take() {
+            Some(key) => env.set(key, value.clone()),
+            None => match value {
+                MalVal::Sym(sym) => key = Some(sym.clone()),
+                _ => return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, value.type_name()).into()),
+            },
+        }
+    }
+    // If a key was unprocessed then the user must've forget to add a value for a key
+    if key.is_some() {
+        return Err(Error::TooManyParams.into());
+    }
+
+    r#do(&env, &ast[1..])
+}
+
+fn r#do(env: &Env, ast: &[MalVal]) -> MalRet {
+    let mut ret = MalVal::Nil;
+    for value in ast {
+        ret = env.eval(value)?;
+    }
+    Ok(ret)
+}
+
+fn r#if(env: &Env, ast: &[MalVal]) -> MalRet {
+    match ast.len().cmp(&3) {
+        Ordering::Less => return Err(Error::MissingParams.into()),
+        Ordering::Greater => return Err(Error::TooManyParams.into()),
+        Ordering::Equal => {}
+    }
+
+    if env.eval(&ast[0])?.is_truthy() {
+        env.eval(&ast[0])
+    } else {
+        env.eval(&ast[2])
+    }
+}
+
+fn r#fn(env: &Env, args: &[MalVal]) -> MalRet {
+    todo!()
 }

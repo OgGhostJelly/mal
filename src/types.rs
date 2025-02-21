@@ -48,6 +48,14 @@ impl MalVal {
         }
     }
 
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            MalVal::Bool(bool) => *bool,
+            MalVal::Nil => false,
+            _ => true,
+        }
+    }
+
     pub fn to_int(&self) -> Result<&i64, env::Error> {
         match self {
             MalVal::Int(i) => Ok(i),
