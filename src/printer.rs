@@ -19,7 +19,7 @@ pub fn write_value(o: &mut impl Write, value: &MalVal) -> fmt::Result {
             '{',
             '}',
         ),
-        MalVal::Func(_) => write!(o, "#<function>"),
+        MalVal::Func(_) | MalVal::MalFunc { .. } => write!(o, "#<function>"),
     }
 }
 

@@ -1,6 +1,9 @@
 use std::{collections::HashMap, fmt, rc::Rc};
 
-use crate::{env, printer, Error};
+use crate::{
+    env::{self, Env},
+    printer, Error,
+};
 
 pub type MalRet = Result<MalVal, Error>;
 pub type MalArgs = Vec<MalVal>;
@@ -18,6 +21,11 @@ pub enum MalVal {
     Int(i64),
     Bool(bool),
     Func(fn(MalArgs) -> MalRet),
+    MalFunc {
+        outer: Env,
+        binds: Rc<Vec<String>>,
+        body: Rc<Vec<MalVal>>,
+    },
     Nil,
 }
 
@@ -43,7 +51,7 @@ impl MalVal {
             MalVal::Kwd(_) => Self::TN_KEYWORD,
             MalVal::Int(_) => Self::TN_INT,
             MalVal::Bool(_) => Self::TN_BOOL,
-            MalVal::Func(_) => Self::TN_FUNCTION,
+            MalVal::Func(_) | MalVal::MalFunc { .. } => Self::TN_FUNCTION,
             MalVal::Nil => Self::TN_NIL,
         }
     }

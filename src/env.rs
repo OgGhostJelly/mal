@@ -20,6 +20,7 @@ pub enum Error {
 
 pub type Env = Rc<EnvInner>;
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct EnvInner {
     data: RefCell<HashMap<String, MalVal>>,
     outer: Option<Env>,
@@ -98,6 +99,7 @@ impl EnvInner {
 
             // Types that evaluate to themselves:
             MalVal::Func(_)
+            | MalVal::MalFunc { .. }
             | MalVal::Str(_)
             | MalVal::Kwd(_)
             | MalVal::Int(_)
@@ -110,6 +112,21 @@ impl EnvInner {
         match op {
             MalVal::Sym(sym) => Ok(self.get(&sym)?),
             MalVal::Func(f) => f(args),
+            MalVal::MalFunc { outer, binds, body } => {
+                match binds.len().cmp(&args.len()) {
+                    Ordering::Less => return Err(Error::MissingParams.into()),
+                    Ordering::Greater => return Err(Error::TooManyParams.into()),
+                    Ordering::Equal => {}
+                }
+
+                let env = Rc::new(EnvInner::new(Some(outer)));
+
+                for (key, value) in binds.iter().zip(args) {
+                    env.set(key.clone(), value);
+                }
+
+                r#do(&env, &body[..])
+            }
             MalVal::List(_)
             | MalVal::Vector(_)
             | MalVal::Map(_)
@@ -239,6 +256,31 @@ fn r#if(env: &Env, ast: &[MalVal]) -> MalRet {
     }
 }
 
-fn r#fn(env: &Env, args: &[MalVal]) -> MalRet {
-    todo!()
+fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
+    match ast.len().cmp(&2) {
+        Ordering::Less => return Err(Error::MissingParams.into()),
+        Ordering::Greater => return Err(Error::TooManyParams.into()),
+        Ordering::Equal => {}
+    }
+
+    let (MalVal::List(binds_ast) | MalVal::Vector(binds_ast)) = &ast[0] else {
+        return Err(Error::TypeMismatch(MalVal::TN_LIST, ast[0].type_name()).into());
+    };
+
+    let mut binds = Vec::with_capacity(binds_ast.len());
+    for bind in binds_ast.iter() {
+        if let MalVal::Sym(sym) = bind {
+            binds.push(sym.clone());
+        } else {
+            return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, bind.type_name()).into());
+        }
+    }
+
+    let body = ast[1..].to_vec();
+
+    Ok(MalVal::MalFunc {
+        outer: env.clone(),
+        binds: Rc::new(binds),
+        body: Rc::new(body),
+    })
 }
