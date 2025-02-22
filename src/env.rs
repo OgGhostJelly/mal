@@ -1,6 +1,6 @@
 use std::{cell::RefCell, cmp::Ordering, collections::HashMap, rc::Rc};
 
-use crate::types::{MalArgs, MalRet, MalVal};
+use crate::types::{MalRet, MalVal};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -38,12 +38,9 @@ impl EnvInner {
 impl Default for EnvInner {
     fn default() -> Self {
         let env = Self::new(None);
-
-        env.set("+".into(), MalVal::Func(add));
-        env.set("-".into(), MalVal::Func(sub));
-        env.set("*".into(), MalVal::Func(mul));
-        env.set("/".into(), MalVal::Func(div));
-
+        for (key, value) in crate::core::NS {
+            env.set(key.to_string(), value.clone());
+        }
         env
     }
 }
@@ -113,7 +110,7 @@ impl EnvInner {
             MalVal::Sym(sym) => Ok(self.get(&sym)?),
             MalVal::Func(f) => f(args),
             MalVal::MalFunc { outer, binds, body } => {
-                match binds.len().cmp(&args.len()) {
+                match args.len().cmp(&binds.len()) {
                     Ordering::Less => return Err(Error::MissingParams.into()),
                     Ordering::Greater => return Err(Error::TooManyParams.into()),
                     Ordering::Equal => {}
@@ -154,39 +151,6 @@ impl EnvInner {
             None => Err(Error::NotFound(key.into())),
         }
     }
-}
-
-macro_rules! impl_sumop {
-    ( $args:expr, $op:tt ) => {
-        #[allow(clippy::assign_op_pattern)]
-        'block: {
-            let args = $args;
-            if args.is_empty() {
-                break 'block Err(Error::MissingParams.into())
-            }
-            let mut sum = args[0].to_int()?.clone();
-            for i in 1..args.len() {
-                sum = sum $op args[i].to_int()?;
-            }
-            Ok(MalVal::Int(sum))
-        }
-    };
-}
-
-fn add(args: MalArgs) -> MalRet {
-    impl_sumop!(args, +)
-}
-
-fn sub(args: MalArgs) -> MalRet {
-    impl_sumop!(args, -)
-}
-
-fn mul(args: MalArgs) -> MalRet {
-    impl_sumop!(args, *)
-}
-
-fn div(args: MalArgs) -> MalRet {
-    impl_sumop!(args, /)
 }
 
 fn def(env: &Env, ast: &[MalVal]) -> MalRet {

@@ -3,6 +3,7 @@
 use env::Env;
 use types::MalVal;
 
+mod core;
 pub mod env;
 mod printer;
 mod reader;
@@ -21,6 +22,6 @@ pub enum Error {
 pub fn rep(env: Env, inp: &str) -> Result<()> {
     let ast = reader::read_str(inp)?;
     let ret = env.eval(&ast)?;
-    println!("> {ret}");
+    println!("> {ret:#}");
     Ok(())
 }

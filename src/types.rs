@@ -84,12 +84,12 @@ impl fmt::Display for MapKey {
             MapKey::Str(str) => MalVal::Str(str.clone()),
             MapKey::Keyword(str) => MalVal::Kwd(str.clone()),
         };
-        printer::write_value(f, &value)
+        printer::write_value(f, &value, f.alternate())
     }
 }
 
 impl fmt::Display for MalVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        printer::write_value(f, self)
+        printer::write_value(f, self, f.alternate())
     }
 }

@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Write};
 
 use crate::MalVal;
 
-pub fn write_value(o: &mut impl Write, value: &MalVal) -> fmt::Result {
+pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> fmt::Result {
     match value {
         MalVal::List(values) => write_seq(o, values.iter(), '(', ')'),
         MalVal::Sym(sym) => o.write_str(sym),
