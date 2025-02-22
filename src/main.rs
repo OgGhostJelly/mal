@@ -1,34 +1,36 @@
 #![allow(clippy::pedantic)]
 
-use std::io::{stdin, stdout, Write};
-
+use rustyline::{error::ReadlineError, Editor};
 use shtml::{env::Env, rep};
 
 fn main() {
-    let stdin = stdin();
-    let mut stdout = stdout();
-    let mut input = String::new();
+    // `()` can be used when no completer is required
+    let mut rl = Editor::<(), rustyline::history::DefaultHistory>::new().unwrap();
+    if rl.load_history(".mal-history").is_err() {
+        eprintln!("No previous history.");
+    }
+
     let env = Env::default();
 
     let _ = rep(env.clone(), "(def! not (fn* (a) (if a false true)))")
         .expect("not func should be valid mal");
 
     loop {
-        print!("user> ");
-        let _ = stdout.flush();
-
-        input.clear();
-        match stdin.read_line(&mut input) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("{e}");
-                continue;
+        match rl.readline("user> ") {
+            Ok(input) => {
+                if !input.is_empty() {
+                    match rep(env.clone(), &input) {
+                        Ok(ret) => println!("> {ret:#}"),
+                        Err(e) => eprintln!("{e}"),
+                    }
+                }
             }
-        }
-
-        match rep(env.clone(), &input) {
-            Ok(ret) => println!("> {ret:#}"),
-            Err(e) => eprintln!("{e}"),
+            Err(ReadlineError::Interrupted) => continue,
+            Err(ReadlineError::Eof) => break,
+            Err(err) => {
+                println!("error: {:?}", err);
+                break;
+            }
         }
     }
 }

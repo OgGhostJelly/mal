@@ -16,8 +16,8 @@ pub enum Error {
     UnmatchedRightParenthesis,
     #[error("invalid map key type, map keys can only be string or keyword type")]
     InvalidMapKeyType,
-    #[error("map key does not have a corresponding value")]
-    MismatchedMapKey,
+    #[error("key does not have a corresponding value")]
+    MismatchedKey,
     #[error(transparent)]
     Pcre(#[from] pcre2::Error),
     #[error(transparent)]
@@ -139,7 +139,7 @@ impl SeqReader<'_, '_> {
             }
         }
         if key.is_some() {
-            return Err(Error::MismatchedMapKey);
+            return Err(Error::MismatchedKey);
         }
         Ok(Rc::new(map))
     }

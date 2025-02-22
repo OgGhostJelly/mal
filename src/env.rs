@@ -22,6 +22,12 @@ pub enum Error {
     FixedParamsMismatch(usize, usize),
     #[error("expected atleast {0} param(s) got {1}")]
     AtleastParamsMismatch(usize, usize),
+    // TODO: maybe add support for this
+    // (def! example (fn* [a & b c] (println a b c)))
+    // (example 1 2 3 4)
+    // > 1 (2 3) 4
+    #[error("cannot put params after the & arg")]
+    ParamsAfterRest,
 }
 
 pub type Env = Rc<EnvInner>;
@@ -195,7 +201,7 @@ fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
     }
     // If a key was unprocessed then the user must've forget to add a value for a key
     if key.is_some() {
-        return Err(reader::Error::MismatchedMapKey.into());
+        return Err(reader::Error::MismatchedKey.into());
     }
 
     r#do(&env, &ast[1..])
@@ -240,6 +246,10 @@ fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
         rest_bind = match binds_ast.next() {
             Some(sym) => RestBind::Bind(sym.to_sym()?.clone()),
             None => RestBind::Ignore,
+        };
+
+        if binds_ast.next().is_some() {
+            return Err(Error::ParamsAfterRest.into());
         }
     }
 
