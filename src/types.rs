@@ -24,9 +24,20 @@ pub enum MalVal {
     MalFunc {
         outer: Env,
         binds: Rc<Vec<String>>,
+        rest_bind: Rc<RestBind>,
         body: Rc<Vec<MalVal>>,
     },
     Nil,
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum RestBind {
+    /// Function without variadic arguments.
+    None,
+    /// Function with variadic arguments but the arguments are ignored.
+    Ignore,
+    /// Function with variadic arguments that get binded to the contained symbol.
+    Bind(String),
 }
 
 impl MalVal {
@@ -40,6 +51,7 @@ impl MalVal {
     pub const TN_BOOL: &'static str = "bool";
     pub const TN_FUNCTION: &'static str = "function";
     pub const TN_NIL: &'static str = "nil";
+    pub const TN_SEQ: &'static str = "seq";
 
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -68,6 +80,20 @@ impl MalVal {
         match self {
             MalVal::Int(i) => Ok(i),
             _ => Err(env::Error::TypeMismatch(Self::TN_INT, self.type_name())),
+        }
+    }
+
+    pub fn to_sym(&self) -> Result<&String, env::Error> {
+        match self {
+            MalVal::Sym(sym) => Ok(sym),
+            _ => Err(env::Error::TypeMismatch(Self::TN_SYMBOL, self.type_name())),
+        }
+    }
+
+    pub fn to_seq(&self) -> Result<&Rc<Vec<MalVal>>, env::Error> {
+        match self {
+            MalVal::List(seq) | MalVal::Vector(seq) => Ok(seq),
+            _ => Err(env::Error::TypeMismatch(Self::TN_SEQ, self.type_name())),
         }
     }
 }

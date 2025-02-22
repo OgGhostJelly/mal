@@ -2,7 +2,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     reader,
-    types::{take_atleast_slice, take_fixed_slice, take_fixed_vec, MalArgs, MalRet, MalVal},
+    types::{
+        take_atleast_slice, take_atleast_vec, take_fixed_slice, take_fixed_vec, MalArgs, MalRet,
+        MalVal, RestBind,
+    },
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -112,13 +115,27 @@ impl EnvInner {
         match op {
             MalVal::Sym(sym) => Ok(self.get(&sym)?),
             MalVal::Func(f) => f(args),
-            MalVal::MalFunc { outer, binds, body } => {
-                let args = take_fixed_vec(args, binds.len())?;
+            MalVal::MalFunc {
+                outer,
+                binds,
+                rest_bind,
+                body,
+            } => {
+                let mut args = match rest_bind.as_ref() {
+                    RestBind::None => take_fixed_vec(args, binds.len())?,
+                    RestBind::Ignore | RestBind::Bind(_) => take_atleast_vec(args, binds.len())?,
+                };
 
                 let env = Rc::new(EnvInner::new(Some(outer)));
 
+                let rest = args.split_off(binds.len());
+
                 for (key, value) in binds.iter().zip(args) {
                     env.set(key.clone(), value);
+                }
+
+                if let RestBind::Bind(key) = rest_bind.as_ref() {
+                    env.set(key.clone(), MalVal::List(Rc::new(rest)));
                 }
 
                 r#do(&env, &body[..])
@@ -155,9 +172,7 @@ impl EnvInner {
 fn def(env: &Env, ast: &[MalVal]) -> MalRet {
     let ast = take_fixed_slice::<2>(ast)?;
 
-    let MalVal::Sym(key) = &ast[0] else {
-        return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, ast[0].type_name()).into());
-    };
+    let key = ast[0].to_sym()?;
 
     let value = env.eval(&ast[1])?;
     env.set(key.into(), value.clone());
@@ -167,9 +182,7 @@ fn def(env: &Env, ast: &[MalVal]) -> MalRet {
 fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
     let ast = take_atleast_slice(ast, 2)?;
 
-    let (MalVal::List(binds) | MalVal::Vector(binds)) = &ast[0] else {
-        return Err(Error::TypeMismatch(MalVal::TN_LIST, ast[0].type_name()).into());
-    };
+    let binds = ast[0].to_seq()?;
 
     let env: Env = Rc::new(EnvInner::new(Some(env.clone())));
 
@@ -177,10 +190,7 @@ fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
     for value in binds.iter() {
         match key.take() {
             Some(key) => env.set(key, value.clone()),
-            None => match value {
-                MalVal::Sym(sym) => key = Some(sym.clone()),
-                _ => return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, value.type_name()).into()),
-            },
+            None => key = Some(value.to_sym()?.clone()),
         }
     }
     // If a key was unprocessed then the user must've forget to add a value for a key
@@ -203,8 +213,10 @@ fn r#do(env: &Env, ast: &[MalVal]) -> MalRet {
 fn r#if(env: &Env, ast: &[MalVal]) -> MalRet {
     let ast = take_fixed_slice::<3>(ast)?;
 
-    if env.eval(&ast[0])?.is_truthy() {
-        env.eval(&ast[0])
+    let cond = env.eval(&ast[0])?;
+
+    if cond.is_truthy() {
+        env.eval(&ast[1])
     } else {
         env.eval(&ast[2])
     }
@@ -213,16 +225,21 @@ fn r#if(env: &Env, ast: &[MalVal]) -> MalRet {
 fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
     let ast = take_atleast_slice(ast, 2)?;
 
-    let (MalVal::List(binds_ast) | MalVal::Vector(binds_ast)) = &ast[0] else {
-        return Err(Error::TypeMismatch(MalVal::TN_LIST, ast[0].type_name()).into());
-    };
+    let mut binds_ast = ast[0].to_seq()?.iter();
 
     let mut binds = Vec::with_capacity(binds_ast.len());
-    for bind in binds_ast.iter() {
-        if let MalVal::Sym(sym) = bind {
-            binds.push(sym.clone());
-        } else {
-            return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, bind.type_name()).into());
+    let mut rest_bind = RestBind::None;
+
+    while let Some(val) = binds_ast.next() {
+        let key = val.to_sym()?.clone();
+        if key != "&" {
+            binds.push(key);
+            continue;
+        }
+
+        rest_bind = match binds_ast.next() {
+            Some(sym) => RestBind::Bind(sym.to_sym()?.clone()),
+            None => RestBind::Ignore,
         }
     }
 
@@ -231,6 +248,7 @@ fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
     Ok(MalVal::MalFunc {
         outer: env.clone(),
         binds: Rc::new(binds),
+        rest_bind: Rc::new(rest_bind),
         body: Rc::new(body),
     })
 }

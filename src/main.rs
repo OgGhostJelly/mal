@@ -10,6 +10,9 @@ fn main() {
     let mut input = String::new();
     let env = Env::default();
 
+    let _ = rep(env.clone(), "(def! not (fn* (a) (if a false true)))")
+        .expect("not func should be valid mal");
+
     loop {
         print!("user> ");
         let _ = stdout.flush();
@@ -24,7 +27,7 @@ fn main() {
         }
 
         match rep(env.clone(), &input) {
-            Ok(()) => {}
+            Ok(ret) => println!("> {ret:#}"),
             Err(e) => eprintln!("{e}"),
         }
     }

@@ -163,7 +163,7 @@ fn is_empty(args: MalArgs) -> MalRet {
         MalVal::List(list) => Ok(MalVal::Bool(list.is_empty())),
         MalVal::Vector(vec) => Ok(MalVal::Bool(vec.is_empty())),
         MalVal::Map(map) => Ok(MalVal::Bool(map.is_empty())),
-        _ => Err(Error::TypeMismatch(MalVal::TN_LIST, args[0].type_name()).into()),
+        _ => Err(Error::TypeMismatch(MalVal::TN_SEQ, args[0].type_name()).into()),
     }
 }
 
@@ -173,6 +173,6 @@ fn count(args: MalArgs) -> MalRet {
         MalVal::List(list) => Ok(MalVal::Int(list.len() as i64)),
         MalVal::Vector(vec) => Ok(MalVal::Int(vec.len() as i64)),
         MalVal::Map(map) => Ok(MalVal::Int(map.len() as i64)),
-        _ => Err(Error::TypeMismatch(MalVal::TN_LIST, args[0].type_name()).into()),
+        _ => Err(Error::TypeMismatch(MalVal::TN_SEQ, args[0].type_name()).into()),
     }
 }

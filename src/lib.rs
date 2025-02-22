@@ -1,15 +1,13 @@
 #![allow(clippy::pedantic)]
 
 use env::Env;
-use types::MalVal;
+use types::{MalRet, MalVal};
 
 mod core;
 pub mod env;
 mod printer;
 mod reader;
 mod types;
-
-type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -19,9 +17,7 @@ pub enum Error {
     Env(#[from] env::Error),
 }
 
-pub fn rep(env: Env, inp: &str) -> Result<()> {
+pub fn rep(env: Env, inp: &str) -> MalRet {
     let ast = reader::read_str(inp)?;
-    let ret = env.eval(&ast)?;
-    println!("> {ret:#}");
-    Ok(())
+    env.eval(&ast)
 }
