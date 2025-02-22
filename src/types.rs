@@ -20,7 +20,7 @@ pub enum MalVal {
     Kwd(String),
     Int(i64),
     Bool(bool),
-    Func(fn(MalArgs) -> MalRet),
+    Func(fn(&Env, MalArgs) -> MalRet),
     MalFunc {
         outer: Env,
         binds: Rc<Vec<String>>,
@@ -94,6 +94,13 @@ impl MalVal {
         match self {
             MalVal::List(seq) | MalVal::Vector(seq) => Ok(seq),
             _ => Err(env::Error::TypeMismatch(Self::TN_SEQ, self.type_name())),
+        }
+    }
+
+    pub fn to_str(&self) -> Result<&str, env::Error> {
+        match self {
+            MalVal::Str(str) => Ok(str),
+            _ => Err(env::Error::TypeMismatch(Self::TN_STRING, self.type_name())),
         }
     }
 }

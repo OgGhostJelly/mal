@@ -50,9 +50,7 @@ impl EnvInner {
 impl Default for EnvInner {
     fn default() -> Self {
         let env = Self::new(None);
-        for (key, value) in crate::core::ns() {
-            env.set(key.to_string(), value);
-        }
+        env.apply_ns(&crate::core::ns());
         env
     }
 }
@@ -136,10 +134,10 @@ impl EnvInner {
         self.apply(op, args)
     }
 
-    pub fn apply(&self, op: MalVal, args: MalArgs) -> TcoRet {
+    pub fn apply(self: &Env, op: MalVal, args: MalArgs) -> TcoRet {
         match op {
             MalVal::Sym(sym) => Ok(TcoRetInner::Ret(self.get(&sym)?)),
-            MalVal::Func(f) => f(args).map(TcoRetInner::Ret),
+            MalVal::Func(f) => f(self, args).map(TcoRetInner::Ret),
             MalVal::MalFunc {
                 outer,
                 binds,
@@ -173,6 +171,12 @@ impl EnvInner {
             | MalVal::Int(_)
             | MalVal::Bool(_)
             | MalVal::Nil => Err(Error::CannotCall(op.type_name()).into()),
+        }
+    }
+
+    pub fn apply_ns(&self, ns: &[(&'static str, MalVal)]) {
+        for (key, value) in ns {
+            self.set(key.to_string(), value.clone());
         }
     }
 }

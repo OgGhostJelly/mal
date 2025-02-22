@@ -1,11 +1,12 @@
 use std::rc::Rc;
 
 use crate::{
-    env::Error,
+    env::{Env, Error},
+    reader,
     types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
 };
 
-pub const fn ns() -> [(&'static str, MalVal); 17] {
+pub const fn ns() -> [(&'static str, MalVal); 20] {
     [
         // Numeric operations
         ("+", MalVal::Func(add)),
@@ -18,12 +19,16 @@ pub const fn ns() -> [(&'static str, MalVal); 17] {
         ("<=", MalVal::Func(le)),
         (">", MalVal::Func(gt)),
         (">=", MalVal::Func(ge)),
-        // Strings and printing
+        // Printing
         ("pr-str", MalVal::Func(pr_str)),
         ("str", MalVal::Func(str)),
         ("print", MalVal::Func(print)),
         ("println", MalVal::Func(println)),
+        // Strings
+        ("read-string", MalVal::Func(read_string)),
+        ("slurp", MalVal::Func(slurp)),
         // Misc
+        ("eval", MalVal::Func(eval)),
         ("list", MalVal::Func(list)),
         ("list?", MalVal::Func(is_list)),
         ("empty?", MalVal::Func(is_empty)),
@@ -47,19 +52,19 @@ macro_rules! impl_numop {
     };
 }
 
-fn add(args: MalArgs) -> MalRet {
+fn add(_env: &Env, args: MalArgs) -> MalRet {
     impl_numop!(args, +)
 }
 
-fn sub(args: MalArgs) -> MalRet {
+fn sub(_env: &Env, args: MalArgs) -> MalRet {
     impl_numop!(args, -)
 }
 
-fn mul(args: MalArgs) -> MalRet {
+fn mul(_env: &Env, args: MalArgs) -> MalRet {
     impl_numop!(args, *)
 }
 
-fn div(args: MalArgs) -> MalRet {
+fn div(_env: &Env, args: MalArgs) -> MalRet {
     impl_numop!(args, /)
 }
 
@@ -82,29 +87,29 @@ macro_rules! impl_compop {
     }
 }
 
-fn eq(args: MalArgs) -> MalRet {
+fn eq(_env: &Env, args: MalArgs) -> MalRet {
     impl_compop!(args, ==)
 }
 
-fn lt(args: MalArgs) -> MalRet {
+fn lt(_env: &Env, args: MalArgs) -> MalRet {
     impl_compop!(args, <)
 }
 
-fn le(args: MalArgs) -> MalRet {
+fn le(_env: &Env, args: MalArgs) -> MalRet {
     impl_compop!(args, <=)
 }
 
-fn gt(args: MalArgs) -> MalRet {
+fn gt(_env: &Env, args: MalArgs) -> MalRet {
     impl_compop!(args, >)
 }
 
-fn ge(args: MalArgs) -> MalRet {
+fn ge(_env: &Env, args: MalArgs) -> MalRet {
     impl_compop!(args, >=)
 }
 
-// Strings and printing
+// Printing
 
-fn pr_str(args: MalArgs) -> MalRet {
+fn pr_str(_env: &Env, args: MalArgs) -> MalRet {
     Ok(MalVal::Str(
         args.into_iter()
             .map(|x| format!("{x:#}"))
@@ -113,7 +118,7 @@ fn pr_str(args: MalArgs) -> MalRet {
     ))
 }
 
-fn str(args: MalArgs) -> MalRet {
+fn str(_env: &Env, args: MalArgs) -> MalRet {
     Ok(MalVal::Str(
         args.into_iter()
             .map(|x| format!("{x}"))
@@ -122,7 +127,7 @@ fn str(args: MalArgs) -> MalRet {
     ))
 }
 
-fn print(args: MalArgs) -> MalRet {
+fn print(_env: &Env, args: MalArgs) -> MalRet {
     let string = args
         .into_iter()
         .map(|x| format!("{x:#}"))
@@ -132,7 +137,7 @@ fn print(args: MalArgs) -> MalRet {
     Ok(MalVal::Str(string))
 }
 
-fn println(args: MalArgs) -> MalRet {
+fn println(_env: &Env, args: MalArgs) -> MalRet {
     let string = args
         .into_iter()
         .map(|x| format!("{x}"))
@@ -142,13 +147,40 @@ fn println(args: MalArgs) -> MalRet {
     Ok(MalVal::Str(string))
 }
 
+// Strings
+
+fn read_string(_env: &Env, args: MalArgs) -> MalRet {
+    let args = take_fixed_vec(args, 1)?;
+    let str = args[0].to_str()?;
+    Ok(reader::read_str(str)?)
+}
+
+fn slurp(_env: &Env, args: MalArgs) -> MalRet {
+    let args = take_fixed_vec(args, 1)?;
+    let file = args[0].to_str()?;
+    let contents = match std::fs::read_to_string(file) {
+        Ok(x) => x,
+        Err(e) => todo!("io error handling: {e}"),
+    };
+    Ok(MalVal::Str(contents))
+}
+
 // Misc
 
-fn list(args: MalArgs) -> MalRet {
+fn eval(env: &Env, args: MalArgs) -> MalRet {
+    let args = take_atleast_vec(args, 1)?;
+    let (args, last) = args.split_at(args.len() - 1);
+    for value in args {
+        env.eval(value)?;
+    }
+    env.eval(&last[0])
+}
+
+fn list(_env: &Env, args: MalArgs) -> MalRet {
     Ok(MalVal::List(Rc::new(args)))
 }
 
-fn is_list(args: MalArgs) -> MalRet {
+fn is_list(_env: &Env, args: MalArgs) -> MalRet {
     for value in args {
         if !matches!(value, MalVal::List(_)) {
             return Ok(MalVal::Bool(false));
@@ -157,7 +189,7 @@ fn is_list(args: MalArgs) -> MalRet {
     Ok(MalVal::Bool(true))
 }
 
-fn is_empty(args: MalArgs) -> MalRet {
+fn is_empty(_env: &Env, args: MalArgs) -> MalRet {
     let args = take_fixed_vec(args, 1)?;
     match &args[0] {
         MalVal::List(list) => Ok(MalVal::Bool(list.is_empty())),
@@ -167,7 +199,7 @@ fn is_empty(args: MalArgs) -> MalRet {
     }
 }
 
-fn count(args: MalArgs) -> MalRet {
+fn count(_env: &Env, args: MalArgs) -> MalRet {
     let args = take_fixed_vec(args, 1)?;
     match &args[0] {
         MalVal::List(list) => Ok(MalVal::Int(list.len() as i64)),

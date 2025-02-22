@@ -12,8 +12,15 @@ fn main() {
 
     let env = Env::default();
 
-    let _ = rep(env.clone(), "(def! not (fn* (a) (if a false true)))")
-        .expect("not func should be valid mal");
+    let _ = rep(
+        env.clone(),
+        r#"
+    (def! not (fn* (a) (if a false true)))
+
+    (def! load-file (fn* [file] (eval (read-string (slurp file)))))
+    "#,
+    )
+    .expect("builtin loader should be valid mal");
 
     loop {
         match rl.readline("user> ") {
