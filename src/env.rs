@@ -58,69 +58,88 @@ impl Default for EnvInner {
 }
 
 impl EnvInner {
-    pub fn eval(self: &Env, ast: &MalVal) -> MalRet {
-        match ast {
-            MalVal::List(ast) => {
-                if ast.is_empty() {
-                    return Ok(MalVal::List(ast.clone()));
-                }
+    #[inline(always)]
+    pub fn eval(self: &Env, ast_val: &MalVal) -> MalRet {
+        self.clone().eval_inner(ast_val.clone())
+    }
 
-                // handle special forms
-                if let MalVal::Sym(ref sym) = ast[0] {
-                    let ast = &ast[1..];
-                    match sym.as_str() {
-                        "def!" => return def(self, ast),
-                        "let*" => return r#let(self, ast),
-                        "do" => return r#do(self, ast),
-                        "if" => return r#if(self, ast),
-                        "fn*" => return r#fn(self, ast),
-                        _ => {}
+    pub fn eval_inner(mut self: Env, mut ast_val: MalVal) -> MalRet {
+        loop {
+            match ast_val {
+                MalVal::List(ast) => {
+                    if ast.is_empty() {
+                        break Ok(MalVal::List(ast.clone()));
+                    }
+
+                    let ret = if let MalVal::Sym(ref sym) = ast[0] {
+                        // handle special forms
+                        let ast_in = &ast[1..];
+                        match sym.as_str() {
+                            "def!" => Ok(TcoRetInner::Ret(def(&self, ast_in)?)),
+                            "fn*" => Ok(TcoRetInner::Ret(r#fn(&self, ast_in)?)),
+                            "if" => r#if(&self, ast_in),
+                            "do" => r#do(&self, ast_in),
+                            "let*" => r#let(&self, ast_in),
+                            _ => self.eval_list(&ast),
+                        }
+                    } else {
+                        self.eval_list(&ast)
+                    }?;
+
+                    match ret {
+                        TcoRetInner::Ret(val) => break Ok(val),
+                        TcoRetInner::Unevaluated(env, val) => {
+                            self = env;
+                            ast_val = val;
+                        }
                     }
                 }
 
-                let op = self.eval(&ast[0])?;
+                MalVal::Sym(sym) => break Ok(self.get(&sym)?.clone()),
 
-                let mut args = Vec::new();
-                for value in &ast[1..] {
-                    args.push(self.eval(value)?);
+                MalVal::Vector(vec) => {
+                    let mut new_vec = Vec::with_capacity(vec.len());
+                    for value in vec.iter() {
+                        new_vec.push(self.eval(value)?);
+                    }
+                    break Ok(MalVal::List(Rc::new(new_vec)));
                 }
 
-                Ok(self.apply(op, args)?)
-            }
-
-            MalVal::Sym(sym) => Ok(self.get(sym)?.clone()),
-
-            MalVal::Vector(vec) => {
-                let mut new_vec = Vec::with_capacity(vec.len());
-                for value in vec.iter() {
-                    new_vec.push(self.eval(value)?);
+                MalVal::Map(map) => {
+                    let mut new_map = HashMap::with_capacity(map.len());
+                    for (key, value) in map.iter() {
+                        new_map.insert(key.clone(), self.eval(value)?);
+                    }
+                    break Ok(MalVal::Map(Rc::new(new_map)));
                 }
-                Ok(MalVal::List(Rc::new(new_vec)))
-            }
 
-            MalVal::Map(map) => {
-                let mut new_map = HashMap::with_capacity(map.len());
-                for (key, value) in map.iter() {
-                    new_map.insert(key.clone(), self.eval(value)?);
-                }
-                Ok(MalVal::Map(Rc::new(new_map)))
+                // Types that evaluate to themselves:
+                MalVal::Func(_)
+                | MalVal::MalFunc { .. }
+                | MalVal::Str(_)
+                | MalVal::Kwd(_)
+                | MalVal::Int(_)
+                | MalVal::Bool(_)
+                | MalVal::Nil => break Ok(ast_val.clone()),
             }
-
-            // Types that evaluate to themselves:
-            MalVal::Func(_)
-            | MalVal::MalFunc { .. }
-            | MalVal::Str(_)
-            | MalVal::Kwd(_)
-            | MalVal::Int(_)
-            | MalVal::Bool(_)
-            | MalVal::Nil => Ok(ast.clone()),
         }
     }
 
-    pub fn apply(&self, op: MalVal, args: MalArgs) -> MalRet {
+    fn eval_list(self: &Env, ast: &Rc<Vec<MalVal>>) -> TcoRet {
+        let op = self.eval(&ast[0])?;
+
+        let mut args = Vec::new();
+        for value in &ast[1..] {
+            args.push(self.eval(value)?);
+        }
+
+        self.apply(op, args)
+    }
+
+    pub fn apply(&self, op: MalVal, args: MalArgs) -> TcoRet {
         match op {
-            MalVal::Sym(sym) => Ok(self.get(&sym)?),
-            MalVal::Func(f) => f(args),
+            MalVal::Sym(sym) => Ok(TcoRetInner::Ret(self.get(&sym)?)),
+            MalVal::Func(f) => f(args).map(TcoRetInner::Ret),
             MalVal::MalFunc {
                 outer,
                 binds,
@@ -185,7 +204,17 @@ fn def(env: &Env, ast: &[MalVal]) -> MalRet {
     Ok(value)
 }
 
-fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
+/// Return value that could be used for tail-call optimizations.
+pub type TcoRet = std::result::Result<TcoRetInner, crate::Error>;
+
+pub enum TcoRetInner {
+    /// Normal mal value returned.
+    Ret(MalVal),
+    /// Unevaluated mal value that should be tail call optimized.
+    Unevaluated(Env, MalVal),
+}
+
+fn r#let(env: &Env, ast: &[MalVal]) -> TcoRet {
     let ast = take_atleast_slice(ast, 2)?;
 
     let binds = ast[0].to_seq()?;
@@ -207,24 +236,24 @@ fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
     r#do(&env, &ast[1..])
 }
 
-fn r#do(env: &Env, ast: &[MalVal]) -> MalRet {
+fn r#do(env: &Env, ast: &[MalVal]) -> TcoRet {
     let ast = take_atleast_slice(ast, 1)?;
-    let mut ret = env.eval(&ast[0])?;
-    for value in &ast[1..] {
-        ret = env.eval(value)?;
+    let (ast, last) = ast.split_at(ast.len() - 1);
+    for value in ast {
+        env.eval(value)?;
     }
-    Ok(ret)
+    Ok(TcoRetInner::Unevaluated(env.clone(), last[0].clone()))
 }
 
-fn r#if(env: &Env, ast: &[MalVal]) -> MalRet {
+fn r#if(env: &Env, ast: &[MalVal]) -> TcoRet {
     let ast = take_fixed_slice::<3>(ast)?;
 
     let cond = env.eval(&ast[0])?;
 
     if cond.is_truthy() {
-        env.eval(&ast[1])
+        Ok(TcoRetInner::Unevaluated(env.clone(), ast[1].clone()))
     } else {
-        env.eval(&ast[2])
+        Ok(TcoRetInner::Unevaluated(env.clone(), ast[2].clone()))
     }
 }
 
