@@ -10,7 +10,13 @@ pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> 
         MalVal::Bool(true) => o.write_str("true"),
         MalVal::Bool(false) => o.write_str("false"),
         MalVal::Nil => o.write_str("nil"),
-        MalVal::Str(str) => write!(o, "\"{}\"", escape_str(str)),
+        MalVal::Str(str) => {
+            if print_readably {
+                write!(o, "\"{}\"", escape_str(str))
+            } else {
+                write!(o, "{}", str)
+            }
+        }
         MalVal::Kwd(str) => write!(o, ":{str}"),
         MalVal::Vector(values) => write_seq(o, values.iter(), '[', ']'),
         MalVal::Map(map) => write_seq(
@@ -55,8 +61,13 @@ mod test {
     #[test]
     fn printing() {
         assert_eq!(
-            MalVal::Str("my \"cool\" string".into()).to_string(),
+            format!("{:#}", MalVal::Str("my \"cool\" string".into())),
             r#""my \"cool\" string""#,
+        );
+
+        assert_eq!(
+            format!("{}", MalVal::Str("my \"cool\" string".into())),
+            r#"my "cool" string"#,
         );
 
         assert_eq!(

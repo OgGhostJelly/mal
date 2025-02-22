@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, rc::Rc};
+use std::{cmp::Ordering, collections::HashMap, fmt, rc::Rc};
 
 use crate::{
     env::{self, Env},
@@ -91,5 +91,35 @@ impl fmt::Display for MapKey {
 impl fmt::Display for MalVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         printer::write_value(f, self, f.alternate())
+    }
+}
+
+pub fn take_atleast_vec(value: MalArgs, at_least: usize) -> Result<MalArgs, Error> {
+    match value.len().cmp(&at_least) {
+        Ordering::Less => Err(env::Error::AtleastParamsMismatch(at_least, value.len()).into()),
+        Ordering::Equal | Ordering::Greater => Ok(value),
+    }
+}
+
+pub fn take_fixed_vec(value: MalArgs, len: usize) -> Result<MalArgs, Error> {
+    match value.len().cmp(&len) {
+        Ordering::Less | Ordering::Greater => {
+            Err(env::Error::FixedParamsMismatch(len, value.len()).into())
+        }
+        Ordering::Equal => Ok(value),
+    }
+}
+
+pub fn take_atleast_slice(value: &[MalVal], at_least: usize) -> Result<&[MalVal], Error> {
+    match value.len().cmp(&at_least) {
+        Ordering::Less => Err(env::Error::AtleastParamsMismatch(at_least, value.len()).into()),
+        Ordering::Equal | Ordering::Greater => Ok(value),
+    }
+}
+
+pub fn take_fixed_slice<const N: usize>(value: &[MalVal]) -> Result<&[MalVal; N], Error> {
+    match value.try_into() {
+        Ok(value) => Ok(value),
+        Err(_) => Err(env::Error::FixedParamsMismatch(N, value.len()).into()),
     }
 }

@@ -1,6 +1,9 @@
-use std::{cell::RefCell, cmp::Ordering, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::types::{MalRet, MalVal};
+use crate::{
+    reader,
+    types::{take_atleast_slice, take_fixed_slice, take_fixed_vec, MalArgs, MalRet, MalVal},
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -12,10 +15,10 @@ pub enum Error {
     TypeMismatch(&'static str, &'static str),
     #[error("cannot call non-function type '{0}'")]
     CannotCall(&'static str),
-    #[error("missing parameters")]
-    MissingParams,
-    #[error("too many parameters")]
-    TooManyParams,
+    #[error("expected {0} param(s) got {1}")]
+    FixedParamsMismatch(usize, usize),
+    #[error("expected atleast {0} param(s) got {1}")]
+    AtleastParamsMismatch(usize, usize),
 }
 
 pub type Env = Rc<EnvInner>;
@@ -38,8 +41,8 @@ impl EnvInner {
 impl Default for EnvInner {
     fn default() -> Self {
         let env = Self::new(None);
-        for (key, value) in crate::core::NS {
-            env.set(key.to_string(), value.clone());
+        for (key, value) in crate::core::ns() {
+            env.set(key.to_string(), value);
         }
         env
     }
@@ -105,16 +108,12 @@ impl EnvInner {
         }
     }
 
-    pub fn apply(&self, op: MalVal, args: Vec<MalVal>) -> MalRet {
+    pub fn apply(&self, op: MalVal, args: MalArgs) -> MalRet {
         match op {
             MalVal::Sym(sym) => Ok(self.get(&sym)?),
             MalVal::Func(f) => f(args),
             MalVal::MalFunc { outer, binds, body } => {
-                match args.len().cmp(&binds.len()) {
-                    Ordering::Less => return Err(Error::MissingParams.into()),
-                    Ordering::Greater => return Err(Error::TooManyParams.into()),
-                    Ordering::Equal => {}
-                }
+                let args = take_fixed_vec(args, binds.len())?;
 
                 let env = Rc::new(EnvInner::new(Some(outer)));
 
@@ -154,11 +153,7 @@ impl EnvInner {
 }
 
 fn def(env: &Env, ast: &[MalVal]) -> MalRet {
-    match ast.len().cmp(&2) {
-        Ordering::Less => return Err(Error::MissingParams.into()),
-        Ordering::Greater => return Err(Error::TooManyParams.into()),
-        Ordering::Equal => {}
-    }
+    let ast = take_fixed_slice::<2>(ast)?;
 
     let MalVal::Sym(key) = &ast[0] else {
         return Err(Error::TypeMismatch(MalVal::TN_SYMBOL, ast[0].type_name()).into());
@@ -170,9 +165,7 @@ fn def(env: &Env, ast: &[MalVal]) -> MalRet {
 }
 
 fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
-    if ast.is_empty() {
-        return Err(Error::MissingParams.into());
-    }
+    let ast = take_atleast_slice(ast, 2)?;
 
     let (MalVal::List(binds) | MalVal::Vector(binds)) = &ast[0] else {
         return Err(Error::TypeMismatch(MalVal::TN_LIST, ast[0].type_name()).into());
@@ -192,16 +185,14 @@ fn r#let(env: &Env, ast: &[MalVal]) -> MalRet {
     }
     // If a key was unprocessed then the user must've forget to add a value for a key
     if key.is_some() {
-        return Err(Error::TooManyParams.into());
+        return Err(reader::Error::MismatchedMapKey.into());
     }
 
     r#do(&env, &ast[1..])
 }
 
 fn r#do(env: &Env, ast: &[MalVal]) -> MalRet {
-    if ast.is_empty() {
-        return Err(Error::MissingParams.into());
-    }
+    let ast = take_atleast_slice(ast, 1)?;
     let mut ret = env.eval(&ast[0])?;
     for value in &ast[1..] {
         ret = env.eval(value)?;
@@ -210,11 +201,7 @@ fn r#do(env: &Env, ast: &[MalVal]) -> MalRet {
 }
 
 fn r#if(env: &Env, ast: &[MalVal]) -> MalRet {
-    match ast.len().cmp(&3) {
-        Ordering::Less => return Err(Error::MissingParams.into()),
-        Ordering::Greater => return Err(Error::TooManyParams.into()),
-        Ordering::Equal => {}
-    }
+    let ast = take_fixed_slice::<3>(ast)?;
 
     if env.eval(&ast[0])?.is_truthy() {
         env.eval(&ast[0])
@@ -224,11 +211,7 @@ fn r#if(env: &Env, ast: &[MalVal]) -> MalRet {
 }
 
 fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
-    match ast.len().cmp(&2) {
-        Ordering::Less => return Err(Error::MissingParams.into()),
-        Ordering::Greater => return Err(Error::TooManyParams.into()),
-        Ordering::Equal => {}
-    }
+    let ast = take_atleast_slice(ast, 2)?;
 
     let (MalVal::List(binds_ast) | MalVal::Vector(binds_ast)) = &ast[0] else {
         return Err(Error::TypeMismatch(MalVal::TN_LIST, ast[0].type_name()).into());
