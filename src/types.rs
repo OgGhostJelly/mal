@@ -10,8 +10,6 @@ pub type MalArgs = Vec<MalVal>;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum MalVal {
-    /// NOTE: for performance reasons the order of the Vec is reversed
-    ///       so the last item in the list is at index 0 and the first item is at index vec.len()
     List(Rc<Vec<MalVal>>),
     Vector(Rc<Vec<MalVal>>),
     Map(Rc<HashMap<MapKey, MalVal>>),
