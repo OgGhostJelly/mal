@@ -123,6 +123,28 @@ impl MalVal {
     }
 }
 
+impl From<i64> for MalVal {
+    fn from(value: i64) -> Self {
+        Self::Int(value)
+    }
+}
+
+impl From<bool> for MalVal {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl<T> From<Vec<T>> for MalVal
+where
+    T: Into<MalVal>,
+{
+    fn from(value: Vec<T>) -> Self {
+        let value = value.into_iter().map(Into::into).collect();
+        MalVal::List(Rc::new(value))
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
 pub enum MapKey {
     Str(String),
@@ -173,4 +195,46 @@ pub fn take_fixed_slice<const N: usize>(value: &[MalVal]) -> Result<&[MalVal; N]
         Ok(value) => Ok(value),
         Err(_) => Err(env::Error::FixedParamsMismatch(N, value.len()).into()),
     }
+}
+
+#[macro_export]
+macro_rules! list {
+    ($($x:expr),+ $(,)?) => {
+        $crate::MalVal::List(std::rc::Rc::new(vec![$($x.into()),+]))
+    };
+}
+
+#[macro_export]
+macro_rules! mvec {
+    ($($x:expr),+ $(,)?) => {
+        $crate::MalVal::Vector(std::rc::Rc::new(vec![$($x.into()),+]))
+    };
+}
+
+#[macro_export]
+macro_rules! str {
+    ( $x:expr ) => {
+        $crate::MalVal::Str($x.into())
+    };
+}
+
+#[macro_export]
+macro_rules! sym {
+    ( $x:expr ) => {
+        $crate::MalVal::Sym($x.into())
+    };
+}
+
+#[macro_export]
+macro_rules! kwd {
+    ( $x:expr ) => {
+        $crate::MalVal::Kwd($x.into())
+    };
+}
+
+#[macro_export]
+macro_rules! atom {
+    ( $x:expr ) => {
+        $crate::MalVal::Atom(std::rc::Rc::new(std::cell::RefCell::new($x.into())))
+    };
 }

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    reader,
+    re, reader,
     types::{
         take_atleast_slice, take_atleast_vec, take_fixed_slice, take_fixed_vec, MalArgs, MalRet,
         MalVal, RestBind,
@@ -30,32 +30,44 @@ pub enum Error {
     ParamsAfterRest,
 }
 
-pub type Env = Rc<EnvInner>;
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct Env(Rc<EnvInner>);
 
 #[derive(PartialEq, Eq, Debug)]
-pub struct EnvInner {
+struct EnvInner {
     data: RefCell<HashMap<String, MalVal>>,
     outer: Option<Env>,
 }
 
-impl EnvInner {
+impl Env {
     pub fn new(outer: Option<Env>) -> Self {
-        Self {
-            data: RefCell::new(HashMap::new()),
-            outer,
-        }
+        Self(
+            EnvInner {
+                data: RefCell::new(HashMap::new()),
+                outer,
+            }
+            .into(),
+        )
     }
 }
 
-impl Default for EnvInner {
+impl Default for Env {
     fn default() -> Self {
         let env = Self::new(None);
         env.apply_ns(&crate::core::ns());
+        re(
+            env.clone(),
+            r#"(do
+(def! not (fn* (a) (if a false true)))
+
+(def! load-file (fn* [file] (eval (read-string (slurp file))))))"#,
+        )
+        .expect("builtin scripts should be valid mal");
         env
     }
 }
 
-impl EnvInner {
+impl Env {
     #[inline(always)]
     pub fn eval(self: &Env, ast_val: &MalVal) -> MalRet {
         self.clone().eval_inner(ast_val.clone())
@@ -150,7 +162,7 @@ impl EnvInner {
                     RestBind::Ignore | RestBind::Bind(_) => take_atleast_vec(args, binds.len())?,
                 };
 
-                let env = Rc::new(EnvInner::new(Some(outer.clone())));
+                let env = Rc::new(Env::new(Some(outer.clone())));
 
                 let rest = args.split_off(binds.len());
 
@@ -183,17 +195,17 @@ impl EnvInner {
     }
 }
 
-impl EnvInner {
+impl Env {
     pub fn set(&self, key: String, value: MalVal) {
-        self.data.borrow_mut().insert(key, value);
+        self.0.data.borrow_mut().insert(key, value);
     }
 
     pub fn get(&self, key: &str) -> Result<MalVal> {
-        if let Some(value) = self.data.borrow().get(key) {
+        if let Some(value) = self.0.data.borrow().get(key) {
             return Ok(value.clone());
         }
 
-        match self.outer {
+        match self.0.outer {
             Some(ref outer) => outer.get(key),
             None => Err(Error::NotFound(key.into())),
         }
@@ -225,7 +237,7 @@ fn r#let(env: &Env, ast: &[MalVal]) -> TcoRet {
 
     let binds = ast[0].to_seq()?;
 
-    let env: Env = Rc::new(EnvInner::new(Some(env.clone())));
+    let env = Env::new(Some(env.clone()));
 
     let mut key = None;
     for value in binds.iter() {

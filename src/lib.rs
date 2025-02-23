@@ -1,13 +1,13 @@
 #![allow(clippy::pedantic)]
 
-use env::Env;
-use types::{MalRet, MalVal};
+pub use env::Env;
+pub use types::{MalRet, MalVal};
 
 mod core;
-pub mod env;
+mod env;
 mod printer;
 mod reader;
-pub mod types;
+mod types;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -17,7 +17,16 @@ pub enum Error {
     Env(#[from] env::Error),
 }
 
-pub fn rep(env: Env, inp: &str) -> MalRet {
+pub fn re(env: Env, inp: &str) -> MalRet {
     let ast = reader::read_str(inp)?;
     env.eval(&ast)
+}
+
+pub fn rep(env: Env, input: &str) {
+    if !input.is_empty() {
+        match re(env.clone(), input) {
+            Ok(ret) => println!("> {ret:#}"),
+            Err(e) => eprintln!("{e}"),
+        }
+    }
 }
