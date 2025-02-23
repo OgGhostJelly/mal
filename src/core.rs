@@ -1,12 +1,12 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    env::{Env, Error},
+    env::{Env, Error, TcoRetInner},
     reader,
     types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
 };
 
-pub const fn ns() -> [(&'static str, MalVal); 20] {
+pub const fn ns() -> [(&'static str, MalVal); 25] {
     [
         // Numeric operations
         ("+", MalVal::Func(add)),
@@ -33,6 +33,12 @@ pub const fn ns() -> [(&'static str, MalVal); 20] {
         ("list?", MalVal::Func(is_list)),
         ("empty?", MalVal::Func(is_empty)),
         ("count", MalVal::Func(count)),
+        // Atom
+        ("atom", MalVal::Func(atom)),
+        ("atom?", MalVal::Func(is_atom)),
+        ("deref", MalVal::Func(deref)),
+        ("reset!", MalVal::Func(reset)),
+        ("swap!", MalVal::Func(swap)),
     ]
 }
 
@@ -207,4 +213,49 @@ fn count(_env: &Env, args: MalArgs) -> MalRet {
         MalVal::Map(map) => Ok(MalVal::Int(map.len() as i64)),
         _ => Err(Error::TypeMismatch(MalVal::TN_SEQ, args[0].type_name()).into()),
     }
+}
+
+fn atom(_env: &Env, args: MalArgs) -> MalRet {
+    let mut args = take_fixed_vec(args, 1)?;
+    let value = args.swap_remove(0);
+    Ok(MalVal::Atom(Rc::new(RefCell::new(value))))
+}
+
+fn is_atom(_env: &Env, args: MalArgs) -> MalRet {
+    for value in args {
+        if !matches!(value, MalVal::Atom(_)) {
+            return Ok(MalVal::Bool(false));
+        }
+    }
+    Ok(MalVal::Bool(true))
+}
+
+fn deref(_env: &Env, args: MalArgs) -> MalRet {
+    let args = take_fixed_vec(args, 1)?;
+    let value = args[0].to_atom()?;
+    let value = value.as_ref().borrow().clone();
+    Ok(value)
+}
+
+fn reset(_env: &Env, args: MalArgs) -> MalRet {
+    let args = take_fixed_vec(args, 2)?;
+    let (atom, val) = (args[0].to_atom()?, &args[1]);
+    atom.replace(val.clone());
+    Ok(val.clone())
+}
+
+fn swap(env: &Env, args: MalArgs) -> MalRet {
+    let mut args = take_atleast_vec(args, 2)?;
+    let mut rest = args.split_off(2);
+
+    let (atom, fun) = (args[0].to_atom()?, args[1].to_func()?);
+
+    rest.insert(0, atom.borrow().clone());
+    let ret = match env.apply(fun, rest)? {
+        TcoRetInner::Ret(val) => val,
+        TcoRetInner::Unevaluated(env, val) => env.eval(&val)?,
+    };
+
+    atom.replace(ret.clone());
+    Ok(ret)
 }

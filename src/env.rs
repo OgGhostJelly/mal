@@ -118,6 +118,7 @@ impl EnvInner {
                 | MalVal::Kwd(_)
                 | MalVal::Int(_)
                 | MalVal::Bool(_)
+                | MalVal::Atom(_)
                 | MalVal::Nil => break Ok(ast_val.clone()),
             }
         }
@@ -131,12 +132,12 @@ impl EnvInner {
             args.push(self.eval(value)?);
         }
 
-        self.apply(op, args)
+        self.apply(&op, args)
     }
 
-    pub fn apply(self: &Env, op: MalVal, args: MalArgs) -> TcoRet {
+    pub fn apply(self: &Env, op: &MalVal, args: MalArgs) -> TcoRet {
         match op {
-            MalVal::Sym(sym) => Ok(TcoRetInner::Ret(self.get(&sym)?)),
+            MalVal::Sym(sym) => Ok(TcoRetInner::Ret(self.get(sym)?)),
             MalVal::Func(f) => f(self, args).map(TcoRetInner::Ret),
             MalVal::MalFunc {
                 outer,
@@ -149,7 +150,7 @@ impl EnvInner {
                     RestBind::Ignore | RestBind::Bind(_) => take_atleast_vec(args, binds.len())?,
                 };
 
-                let env = Rc::new(EnvInner::new(Some(outer)));
+                let env = Rc::new(EnvInner::new(Some(outer.clone())));
 
                 let rest = args.split_off(binds.len());
 
@@ -170,6 +171,7 @@ impl EnvInner {
             | MalVal::Kwd(_)
             | MalVal::Int(_)
             | MalVal::Bool(_)
+            | MalVal::Atom(_)
             | MalVal::Nil => Err(Error::CannotCall(op.type_name()).into()),
         }
     }

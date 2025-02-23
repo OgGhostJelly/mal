@@ -7,7 +7,7 @@ mod core;
 pub mod env;
 mod printer;
 mod reader;
-mod types;
+pub mod types;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

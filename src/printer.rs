@@ -26,6 +26,13 @@ pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> 
             '}',
         ),
         MalVal::Func(_) | MalVal::MalFunc { .. } => write!(o, "#<function>"),
+        MalVal::Atom(atom) => {
+            if print_readably {
+                write!(o, "(atom {:#})", atom.borrow())
+            } else {
+                write!(o, "(atom {})", atom.borrow())
+            }
+        }
     }
 }
 

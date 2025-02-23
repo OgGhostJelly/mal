@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, fmt, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::HashMap, fmt, rc::Rc};
 
 use crate::{
     env::{self, Env},
@@ -26,6 +26,7 @@ pub enum MalVal {
         body: Rc<Vec<MalVal>>,
     },
     Nil,
+    Atom(Rc<RefCell<MalVal>>),
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -50,6 +51,7 @@ impl MalVal {
     pub const TN_FUNCTION: &'static str = "function";
     pub const TN_NIL: &'static str = "nil";
     pub const TN_SEQ: &'static str = "seq";
+    pub const TN_ATOM: &'static str = "atom";
 
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -63,6 +65,7 @@ impl MalVal {
             MalVal::Bool(_) => Self::TN_BOOL,
             MalVal::Func(_) | MalVal::MalFunc { .. } => Self::TN_FUNCTION,
             MalVal::Nil => Self::TN_NIL,
+            MalVal::Atom(_) => Self::TN_ATOM,
         }
     }
 
@@ -99,6 +102,23 @@ impl MalVal {
         match self {
             MalVal::Str(str) => Ok(str),
             _ => Err(env::Error::TypeMismatch(Self::TN_STRING, self.type_name())),
+        }
+    }
+
+    pub fn to_atom(&self) -> Result<&Rc<RefCell<MalVal>>, env::Error> {
+        match self {
+            MalVal::Atom(atom) => Ok(atom),
+            _ => Err(env::Error::TypeMismatch(Self::TN_STRING, self.type_name())),
+        }
+    }
+
+    pub fn to_func(&self) -> Result<&Self, env::Error> {
+        match self {
+            MalVal::Func(_) | MalVal::MalFunc { .. } => Ok(self),
+            _ => Err(env::Error::TypeMismatch(
+                Self::TN_FUNCTION,
+                self.type_name(),
+            )),
         }
     }
 }

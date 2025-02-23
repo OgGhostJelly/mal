@@ -60,6 +60,10 @@ impl Reader<'_> {
             b"(" => Ok(MalVal::List(SeqReader::new(self, b")").into_vec()?)),
             b"[" => Ok(MalVal::Vector(SeqReader::new(self, b"]").into_vec()?)),
             b"{" => Ok(MalVal::Map(SeqReader::new(self, b"}").into_map()?)),
+            b"@" => Ok(MalVal::List(Rc::new(vec![MalVal::Sym("deref".into()), {
+                self.next();
+                self.read_form()?
+            }]))),
             _ => self.read_atom(),
         }?;
         Ok(val)

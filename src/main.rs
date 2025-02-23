@@ -1,7 +1,11 @@
 #![allow(clippy::pedantic)]
 
+use std::{env, rc::Rc};
+
 use rustyline::{error::ReadlineError, Editor};
-use shtml::{env::Env, rep};
+use shtml::{env::Env, rep, types::MalVal};
+
+// TODO: error when unparsed tokens
 
 fn main() {
     // `()` can be used when no completer is required
@@ -15,12 +19,27 @@ fn main() {
     let _ = rep(
         env.clone(),
         r#"
-    (def! not (fn* (a) (if a false true)))
+    (do
+        (def! not (fn* (a) (if a false true)))
 
-    (def! load-file (fn* [file] (eval (read-string (slurp file)))))
+        (def! load-file (fn* [file] (eval (read-string (slurp file))))))
     "#,
     )
-    .expect("builtin loader should be valid mal");
+    .expect("builtin scripts should be valid mal");
+
+    let mut args = env::args().skip(1);
+    if let Some(file) = args.next() {
+        _ = env
+            .eval(&MalVal::List(Rc::new(vec![
+                MalVal::Sym("load-file".into()),
+                MalVal::Str(file),
+            ])))
+            .expect("builtin scripts should be valid mal");
+
+        let args: Vec<MalVal> = args.map(MalVal::Str).collect();
+        let args = MalVal::List(Rc::new(args));
+        env.set("*ARGV*".into(), args);
+    }
 
     loop {
         match rl.readline("user> ") {
