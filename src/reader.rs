@@ -24,6 +24,8 @@ pub enum Error {
     NumberParse(#[from] ParseIntError),
     #[error(transparent)]
     InvalidUtf8(#[from] Utf8Error),
+    #[error("unexpected eof")]
+    UnexpectedEof,
 }
 
 pub struct Reader<'a> {
@@ -187,7 +189,26 @@ pub fn tokenize(str: &str) -> Result<Vec<&[u8]>> {
 
 pub fn read_str(str: &str) -> Result<MalVal> {
     let mut reader = Reader::new(tokenize(str)?);
-    reader.read_form()
+    let val = reader.read_form()?;
+
+    if reader.position + 1 != count_tokens_trim_end(&reader) {
+        return Err(Error::UnexpectedEof);
+    }
+
+    Ok(val)
+}
+
+/// Count the amount of tokens in the reader excluding empty tokens at the end.
+fn count_tokens_trim_end(reader: &Reader<'_>) -> usize {
+    let mut count = reader.tokens.len();
+    for value in reader.tokens.iter().rev() {
+        if value.is_empty() {
+            count -= 1;
+        } else {
+            break;
+        }
+    }
+    count
 }
 
 #[cfg(test)]

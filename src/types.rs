@@ -142,16 +142,6 @@ impl From<bool> for MalVal {
     }
 }
 
-impl<T> From<Vec<T>> for MalVal
-where
-    T: Into<MalVal>,
-{
-    fn from(value: Vec<T>) -> Self {
-        let value = value.into_iter().map(Into::into).collect();
-        MalVal::List(Rc::new(value))
-    }
-}
-
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
 pub enum MapKey {
     Str(String),

@@ -170,7 +170,7 @@ fn slurp(_env: &Env, args: MalArgs) -> MalRet {
     let file = args[0].to_str()?;
     let contents = match std::fs::read_to_string(file) {
         Ok(x) => x,
-        Err(e) => todo!("io error handling: {e}"),
+        Err(e) => return Err(Error::Io(e).into()),
     };
     Ok(MalVal::Str(contents))
 }
@@ -207,7 +207,7 @@ pub fn cons(_env: &Env, args: MalArgs) -> MalRet {
         vec.push(value.clone());
     }
 
-    Ok(vec.into())
+    Ok(MalVal::List(vec.into()))
 }
 
 pub fn concat(_env: &Env, args: MalArgs) -> MalRet {
@@ -217,7 +217,7 @@ pub fn concat(_env: &Env, args: MalArgs) -> MalRet {
             vec.push(value.clone());
         }
     }
-    Ok(vec.into())
+    Ok(MalVal::List(vec.into()))
 }
 
 pub fn vec(_env: &Env, args: MalArgs) -> MalRet {

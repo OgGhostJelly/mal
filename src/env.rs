@@ -22,12 +22,10 @@ pub enum Error {
     FixedParamsMismatch(usize, usize),
     #[error("expected atleast {0} param(s) got {1}")]
     AtleastParamsMismatch(usize, usize),
-    // TODO: maybe add support for this
-    // (def! example (fn* [a & b c] (println a b c)))
-    // (example 1 2 3 4)
-    // > 1 (2 3) 4
     #[error("cannot put params after the & arg")]
     ParamsAfterRest,
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]

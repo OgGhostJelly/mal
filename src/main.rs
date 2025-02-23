@@ -5,8 +5,6 @@ use std::{env, rc::Rc};
 use rustyline::{error::ReadlineError, Editor};
 use shtml::{list, rep, str, sym, Env, MalVal};
 
-// TODO: error when unparsed tokens
-
 fn main() {
     let env = Env::default();
 
