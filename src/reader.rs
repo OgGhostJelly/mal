@@ -4,7 +4,7 @@ use std::{collections::HashMap, num::ParseIntError, rc::Rc, str::Utf8Error};
 
 use pcre2::bytes::Regex;
 
-use crate::{types::MapKey, MalVal};
+use crate::{list, sym, types::MapKey, MalVal};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -60,13 +60,19 @@ impl Reader<'_> {
             b"(" => Ok(MalVal::List(SeqReader::new(self, b")").into_vec()?)),
             b"[" => Ok(MalVal::Vector(SeqReader::new(self, b"]").into_vec()?)),
             b"{" => Ok(MalVal::Map(SeqReader::new(self, b"}").into_map()?)),
-            b"@" => Ok(MalVal::List(Rc::new(vec![MalVal::Sym("deref".into()), {
-                self.next();
-                self.read_form()?
-            }]))),
+            b"@" => Ok(list!(sym!("deref"), self.next_form()?)),
+            b"'" => Ok(list!(sym!("quote"), self.next_form()?)),
+            b"`" => Ok(list!(sym!("quasiquote"), self.next_form()?)),
+            b"~" => Ok(list!(sym!("unquote"), self.next_form()?)),
+            b"~@" => Ok(list!(sym!("splice-unquote"), self.next_form()?)),
             _ => self.read_atom(),
         }?;
         Ok(val)
+    }
+
+    fn next_form(&mut self) -> Result<MalVal> {
+        self.next();
+        self.read_form()
     }
 
     pub fn read_atom(&self) -> Result<MalVal> {

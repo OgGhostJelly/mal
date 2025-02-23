@@ -98,6 +98,13 @@ impl MalVal {
         }
     }
 
+    pub fn to_list(&self) -> Result<&Rc<Vec<MalVal>>, env::Error> {
+        match self {
+            MalVal::List(seq) => Ok(seq),
+            _ => Err(env::Error::TypeMismatch(Self::TN_SEQ, self.type_name())),
+        }
+    }
+
     pub fn to_str(&self) -> Result<&str, env::Error> {
         match self {
             MalVal::Str(str) => Ok(str),
@@ -199,6 +206,12 @@ pub fn take_fixed_slice<const N: usize>(value: &[MalVal]) -> Result<&[MalVal; N]
 
 #[macro_export]
 macro_rules! list {
+    () => (
+        $crate::MalVal::List(std::rc::Rc::new(vec![]))
+    );
+    ($elem:expr; $n:expr) => (
+        $crate::MalVal::List(std::rc::Rc::new(vec![$elem.into();$n]))
+    );
     ($($x:expr),+ $(,)?) => {
         $crate::MalVal::List(std::rc::Rc::new(vec![$($x.into()),+]))
     };

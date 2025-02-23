@@ -6,8 +6,8 @@ use crate::{
     types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
 };
 
-pub const fn ns() -> [(&'static str, MalVal); 25] {
-    [
+pub const fn ns() -> &'static [(&'static str, MalVal)] {
+    &[
         // Numeric operations
         ("+", MalVal::Func(add)),
         ("-", MalVal::Func(sub)),
@@ -27,10 +27,14 @@ pub const fn ns() -> [(&'static str, MalVal); 25] {
         // Strings
         ("read-string", MalVal::Func(read_string)),
         ("slurp", MalVal::Func(slurp)),
-        // Misc
-        ("eval", MalVal::Func(eval)),
+        // List
         ("list", MalVal::Func(list)),
         ("list?", MalVal::Func(is_list)),
+        ("cons", MalVal::Func(cons)),
+        ("concat", MalVal::Func(concat)),
+        ("vec", MalVal::Func(vec)),
+        // Misc
+        ("eval", MalVal::Func(eval)),
         ("empty?", MalVal::Func(is_empty)),
         ("count", MalVal::Func(count)),
         // Atom
@@ -171,16 +175,7 @@ fn slurp(_env: &Env, args: MalArgs) -> MalRet {
     Ok(MalVal::Str(contents))
 }
 
-// Misc
-
-fn eval(env: &Env, args: MalArgs) -> MalRet {
-    let args = take_atleast_vec(args, 1)?;
-    let (args, last) = args.split_at(args.len() - 1);
-    for value in args {
-        env.eval(value)?;
-    }
-    env.eval(&last[0])
-}
+// List
 
 fn list(_env: &Env, args: MalArgs) -> MalRet {
     Ok(MalVal::List(Rc::new(args)))
@@ -193,6 +188,57 @@ fn is_list(_env: &Env, args: MalArgs) -> MalRet {
         }
     }
     Ok(MalVal::Bool(true))
+}
+
+pub fn cons(_env: &Env, args: MalArgs) -> MalRet {
+    let args = take_atleast_vec(args, 2)?;
+    let (elems, to) = args.split_at(args.len() - 1);
+    let to = &to[0];
+
+    let seq = to.to_seq()?;
+
+    let mut vec = Vec::with_capacity(elems.len() + seq.len());
+
+    for value in elems {
+        vec.push(value.clone());
+    }
+
+    for value in seq.iter() {
+        vec.push(value.clone());
+    }
+
+    Ok(vec.into())
+}
+
+pub fn concat(_env: &Env, args: MalArgs) -> MalRet {
+    let mut vec = Vec::new();
+    for value in args {
+        for value in value.to_seq()?.iter() {
+            vec.push(value.clone());
+        }
+    }
+    Ok(vec.into())
+}
+
+pub fn vec(_env: &Env, args: MalArgs) -> MalRet {
+    let mut vec = Vec::new();
+    for value in args {
+        for value in value.to_seq()?.iter() {
+            vec.push(value.clone());
+        }
+    }
+    Ok(MalVal::Vector(Rc::new(vec)))
+}
+
+// Misc
+
+fn eval(env: &Env, args: MalArgs) -> MalRet {
+    let args = take_atleast_vec(args, 1)?;
+    let (args, last) = args.split_at(args.len() - 1);
+    for value in args {
+        env.eval(value)?;
+    }
+    env.eval(&last[0])
 }
 
 fn is_empty(_env: &Env, args: MalArgs) -> MalRet {
@@ -214,6 +260,8 @@ fn count(_env: &Env, args: MalArgs) -> MalRet {
         _ => Err(Error::TypeMismatch(MalVal::TN_SEQ, args[0].type_name()).into()),
     }
 }
+
+// Atom
 
 fn atom(_env: &Env, args: MalArgs) -> MalRet {
     let mut args = take_fixed_vec(args, 1)?;

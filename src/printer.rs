@@ -4,8 +4,18 @@ use crate::MalVal;
 
 pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> fmt::Result {
     match value {
-        MalVal::List(values) => write_seq(o, values.iter(), '(', ')'),
-        MalVal::Sym(sym) => o.write_str(sym),
+        MalVal::List(values) => {
+            if print_readably {
+                o.write_char('\'')?;
+            }
+            write_seq(o, values.iter(), '(', ')')
+        }
+        MalVal::Sym(sym) => {
+            if print_readably {
+                o.write_char('\'')?;
+            }
+            o.write_str(sym)
+        }
         MalVal::Int(num) => o.write_str(&num.to_string()),
         MalVal::Bool(true) => o.write_str("true"),
         MalVal::Bool(false) => o.write_str("false"),

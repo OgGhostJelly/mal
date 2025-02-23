@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    re, reader,
+    list, re, reader, sym,
     types::{
         take_atleast_slice, take_atleast_vec, take_fixed_slice, take_fixed_vec, MalArgs, MalRet,
         MalVal, RestBind,
@@ -54,7 +54,7 @@ impl Env {
 impl Default for Env {
     fn default() -> Self {
         let env = Self::new(None);
-        env.apply_ns(&crate::core::ns());
+        env.apply_ns(crate::core::ns());
         re(
             env.clone(),
             r#"(do
@@ -87,6 +87,8 @@ impl Env {
                         match sym.as_str() {
                             "def!" => Ok(TcoRetInner::Ret(def(&self, ast_in)?)),
                             "fn*" => Ok(TcoRetInner::Ret(r#fn(&self, ast_in)?)),
+                            "quote" => Ok(TcoRetInner::Ret(quote(&self, ast_in)?)),
+                            "quasiquote" => quasiquote(&self, ast_in),
                             "if" => r#if(&self, ast_in),
                             "do" => r#do(&self, ast_in),
                             "let*" => r#let(&self, ast_in),
@@ -308,4 +310,49 @@ fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
         rest_bind: Rc::new(rest_bind),
         body: Rc::new(body),
     })
+}
+
+fn quote(_env: &Env, ast: &[MalVal]) -> MalRet {
+    Ok(take_fixed_slice::<1>(ast)?[0].clone())
+}
+
+fn quasiquote(env: &Env, ast: &[MalVal]) -> TcoRet {
+    let ast = &take_fixed_slice::<1>(ast)?[0];
+    Ok(TcoRetInner::Unevaluated(
+        env.clone(),
+        quasiquote_inner(ast)?,
+    ))
+}
+
+fn quasiquote_inner(ast: &MalVal) -> MalRet {
+    match ast {
+        MalVal::List(list) | MalVal::Vector(list) => {
+            if matches!(list.first(), Some(MalVal::Sym(sym)) if sym == "unquote") {
+                let val = &take_fixed_slice::<1>(&list[1..])?[0];
+                return Ok(val.clone());
+            }
+
+            let mut new_list = list![];
+
+            for elt in list.iter().rev() {
+                if let MalVal::List(list) = elt {
+                    if matches!(list.first(), Some(MalVal::Sym(sym)) if sym == "splice-unquote") {
+                        let val = &take_fixed_slice::<1>(&list[1..])?[0];
+                        new_list = list![sym!("concat"), val.clone(), new_list];
+                        continue;
+                    }
+                }
+
+                new_list = list![sym!("cons"), quasiquote_inner(elt)?, new_list]
+            }
+
+            if let MalVal::Vector(_) = ast {
+                new_list = list![sym!("vec"), new_list];
+            }
+
+            Ok(new_list)
+        }
+        MalVal::Map(_) | MalVal::Sym(_) => Ok(list![sym!("quote"), ast.clone()]),
+        _ => Ok(ast.clone()),
+    }
 }
