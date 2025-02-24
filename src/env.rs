@@ -63,7 +63,8 @@ impl Default for Env {
             r#"(do
 (def! not (fn* (a) (if a false true)))
 
-(def! load-file (fn* [file] (eval (read-string (slurp file))))))"#,
+(def! load-file (fn* [file] (eval (read-string
+    (str "(do" (slurp file) "\n)"))))))"#,
         )
         .expect("builtin scripts should be valid mal");
         re(&env, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
