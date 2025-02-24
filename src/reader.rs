@@ -145,7 +145,7 @@ impl SeqReader<'_, '_> {
                 }
                 None => match value? {
                     MalVal::Str(str) => key = Some(MapKey::Str(str)),
-                    MalVal::Kwd(str) => key = Some(MapKey::Keyword(str)),
+                    MalVal::Kwd(str) => key = Some(MapKey::Kwd(str)),
                     _ => return Err(Error::InvalidMapKeyType),
                 },
             }
@@ -279,7 +279,7 @@ mod test {
             MalVal::Map(Rc::new(
                 [
                     (MapKey::Str("a".into()), MalVal::Int(1)),
-                    (MapKey::Keyword("b".into()), MalVal::Int(2)),
+                    (MapKey::Kwd("b".into()), MalVal::Int(2)),
                     (MapKey::Str("c".into()), MalVal::Int(3)),
                 ]
                 .into()

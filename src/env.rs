@@ -296,16 +296,14 @@ fn r#let(env: &Env, ast: &[MalVal]) -> TcoRet {
 
     let env = Env::new(Some(env.clone()));
 
-    let mut key = None;
-    for value in binds.iter() {
-        match key.take() {
-            Some(key) => env.set(key, value.clone()),
-            None => key = Some(value.to_sym()?.clone()),
-        }
-    }
-    // If a key was unprocessed then the user must've forget to add a value for a key
-    if key.is_some() {
+    if binds.len() % 2 != 0 {
         return Err(reader::Error::MismatchedKey.into());
+    }
+
+    for chunk in binds.chunks(2) {
+        let key = chunk[0].to_sym()?;
+        let value = &chunk[1];
+        env.set(key.clone(), value.clone());
     }
 
     r#do(&env, &ast[1..])

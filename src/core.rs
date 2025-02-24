@@ -1,6 +1,8 @@
-// Most functions in core.rs need to return `MalRet` to interface with mal
-// this falsely activates the clippy::unnecessary_wraps lint
-#![allow(clippy::unnecessary_wraps)]
+#![allow(
+    clippy::unnecessary_wraps,
+    reason = r#"Most functions in core.rs need to return `MalRet` to interface with mal
+this falsely activates the clippy::unnecessary_wraps lint"#
+)]
 
 use crate::{
     env::Env,
@@ -32,8 +34,6 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("eval", func!(meta::eval)),
         ("apply", func!(meta::apply)),
         // collection
-        ("list", func!(collection::list)),
-        ("list?", func!(collection::is_list)),
         ("cons", func!(collection::cons)),
         ("concat", func!(collection::concat)),
         ("vec", func!(collection::vec)),
@@ -43,12 +43,34 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("empty?", func!(collection::is_empty)),
         ("count", func!(collection::count)),
         ("map", func!(collection::map)),
+        ("assoc", func!(collection::assoc)),
+        ("dissoc", func!(collection::dissoc)),
+        ("get", func!(collection::get)),
+        ("contains", func!(collection::contains)),
+        ("keys", func!(collection::keys)),
+        ("vals", func!(collection::vals)),
         // atom
         ("atom", func!(atom::atom)),
         ("atom?", func!(atom::is_atom)),
         ("deref", func!(atom::deref)),
         ("reset!", func!(atom::reset)),
         ("swap!", func!(atom::swap)),
+        // cons
+        ("list", func!(cons::list)),
+        ("vector", func!(cons::vector)),
+        ("symbol", func!(cons::symbol)),
+        ("keyword", func!(cons::keyword)),
+        ("hashmap", func!(cons::hashmap)),
+        // predicate
+        ("nil?", func!(predicate::nil)),
+        ("true?", func!(predicate::r#true)),
+        ("false?", func!(predicate::r#false)),
+        ("symbol?", func!(predicate::symbol)),
+        ("list?", func!(predicate::list)),
+        ("vector?", func!(predicate::vector)),
+        ("keyword?", func!(predicate::keyword)),
+        ("sequential?", func!(predicate::sequential)),
+        ("map?", func!(predicate::map)),
         // other
         ("throw", func!(throw)),
     ]
@@ -239,28 +261,15 @@ mod meta {
 }
 
 mod collection {
-    use std::rc::Rc;
+    use std::{collections::HashMap, rc::Rc};
 
     use saturating_cast::SaturatingCast as _;
 
     use crate::{
         env::{Env, Error},
-        list,
+        list, reader,
         types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
     };
-
-    pub fn list(_env: &Env, args: MalArgs) -> MalRet {
-        Ok(MalVal::List(Rc::new(args)))
-    }
-
-    pub fn is_list(_env: &Env, args: MalArgs) -> MalRet {
-        for value in args {
-            if !matches!(value, MalVal::List(_)) {
-                return Ok(MalVal::Bool(false));
-            }
-        }
-        Ok(MalVal::Bool(true))
-    }
 
     pub fn cons(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_atleast_vec(args, 2)?;
@@ -369,6 +378,80 @@ mod collection {
 
         Ok(MalVal::List(new_seq.into()))
     }
+
+    pub fn assoc(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_atleast_vec(args, 1)?;
+        let map = args[0].to_map()?;
+        let args = &args[1..];
+
+        if args.len() % 2 != 0 {
+            return Err(reader::Error::MismatchedKey.into());
+        }
+
+        let mut new_map = HashMap::with_capacity(map.len() + args.len() / 2);
+
+        for (key, value) in map.iter() {
+            new_map.insert(key.clone(), value.clone());
+        }
+
+        for chunk in args.chunks(2) {
+            let key = chunk[0].to_map_key()?;
+            let value = chunk[1].clone();
+            new_map.insert(key, value);
+        }
+
+        Ok(new_map.into())
+    }
+
+    pub fn dissoc(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_atleast_vec(args, 1)?;
+        let map = args[0].to_map()?;
+        let args = &args[1..];
+
+        let mut new_map = HashMap::with_capacity(map.len().saturating_sub(args.len()));
+
+        for (key, value) in map.iter() {
+            new_map.insert(key.clone(), value.clone());
+        }
+
+        for key in args {
+            new_map.remove(&key.to_map_key()?);
+        }
+
+        Ok(new_map.into())
+    }
+
+    pub fn get(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 2)?;
+        let map = args[0].to_map()?;
+        let key = args[1].to_map_key()?;
+        Ok(map.get(&key).cloned().into())
+    }
+
+    pub fn contains(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 2)?;
+        let map = args[0].to_map()?;
+        let key = args[1].to_map_key()?;
+        Ok(map.contains_key(&key).into())
+    }
+
+    pub fn keys(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 1)?;
+        let map = args[0].to_map()?;
+
+        let keys = map.keys().cloned().map(Into::into).collect();
+
+        Ok(MalVal::List(Rc::new(keys)))
+    }
+
+    pub fn vals(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 1)?;
+        let map = args[0].to_map()?;
+
+        let keys = map.values().cloned().map(Into::into).collect();
+
+        Ok(MalVal::List(Rc::new(keys)))
+    }
 }
 
 mod atom {
@@ -419,6 +502,99 @@ mod atom {
 
         atom.replace(ret.clone());
         Ok(ret)
+    }
+}
+
+mod cons {
+    use std::{collections::HashMap, rc::Rc};
+
+    use crate::{
+        env::Env,
+        reader,
+        types::{take_fixed_vec, MalArgs, MalRet, MalVal},
+    };
+
+    pub fn list(_env: &Env, args: MalArgs) -> MalRet {
+        Ok(MalVal::List(Rc::new(args)))
+    }
+    pub fn vector(_env: &Env, args: MalArgs) -> MalRet {
+        Ok(MalVal::Vector(Rc::new(args)))
+    }
+    pub fn symbol(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 1)?;
+        let sym = args[0].to_str()?;
+        Ok(MalVal::Sym(sym.to_string()))
+    }
+    pub fn keyword(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 1)?;
+        let sym = args[0].to_str()?;
+        Ok(MalVal::Kwd(sym.to_string()))
+    }
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "Needs to pass by value because the function has to have this signature"
+    )]
+    pub fn hashmap(_env: &Env, args: MalArgs) -> MalRet {
+        if args.len() % 2 != 0 {
+            return Err(reader::Error::MismatchedKey.into());
+        }
+
+        let mut map = HashMap::with_capacity(args.len() / 2);
+
+        for chunk in args.chunks(2) {
+            let key = chunk[0].to_map_key()?;
+            let value = chunk[1].clone();
+            map.insert(key, value);
+        }
+
+        Ok(map.into())
+    }
+}
+
+mod predicate {
+    use crate::{
+        env::Env,
+        types::{MalArgs, MalRet},
+        MalVal,
+    };
+
+    fn is_all(_env: &Env, args: MalArgs, pred: impl Fn(MalVal) -> bool) -> MalRet {
+        for arg in args {
+            if !pred(arg) {
+                return Ok(false.into());
+            }
+        }
+        Ok(true.into())
+    }
+
+    pub fn nil(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| val.is_nil())
+    }
+    pub fn r#true(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| val.is_truthy())
+    }
+    pub fn r#false(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| val.is_falsey())
+    }
+    pub fn symbol(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| matches!(val, MalVal::Sym(_)))
+    }
+    pub fn list(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| matches!(val, MalVal::List(_)))
+    }
+    pub fn vector(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| matches!(val, MalVal::Vector(_)))
+    }
+    pub fn keyword(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| matches!(val, MalVal::Kwd(_)))
+    }
+    pub fn sequential(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| {
+            matches!(val, MalVal::List(_) | MalVal::Vector(_))
+        })
+    }
+    pub fn map(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| matches!(val, MalVal::Map(_)))
     }
 }
 

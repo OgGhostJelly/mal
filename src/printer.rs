@@ -119,8 +119,8 @@ mod test {
 
         let str = MalVal::Map(Rc::new(
             [
-                (MapKey::Keyword("a".into()), MalVal::Nil),
-                (MapKey::Keyword("b".into()), MalVal::Int(2)),
+                (MapKey::Kwd("a".into()), MalVal::Nil),
+                (MapKey::Kwd("b".into()), MalVal::Int(2)),
             ]
             .into(),
         ))

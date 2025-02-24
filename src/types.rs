@@ -54,6 +54,7 @@ impl MalVal {
     pub const TN_NIL: &'static str = "nil";
     pub const TN_SEQ: &'static str = "seq";
     pub const TN_ATOM: &'static str = "atom";
+    pub const TN_MAP_KEY: &'static str = "map-key";
 
     #[must_use]
     pub fn type_name(&self) -> &'static str {
@@ -82,6 +83,12 @@ impl MalVal {
     }
 
     #[must_use]
+    #[inline]
+    pub fn is_falsey(&self) -> bool {
+        !self.is_truthy()
+    }
+
+    #[must_use]
     pub fn is_nil(&self) -> bool {
         matches!(self, MalVal::Nil)
     }
@@ -100,6 +107,14 @@ impl MalVal {
         }
     }
 
+    pub fn to_map_key(&self) -> Result<MapKey, env::Error> {
+        match self {
+            MalVal::Str(str) => Ok(MapKey::Str(str.into())),
+            MalVal::Kwd(str) => Ok(MapKey::Kwd(str.into())),
+            _ => Err(env::Error::TypeMismatch(Self::TN_MAP_KEY, self.type_name())),
+        }
+    }
+
     pub fn to_seq(&self) -> Result<&Rc<Vec<MalVal>>, env::Error> {
         match self {
             MalVal::List(seq) | MalVal::Vector(seq) => Ok(seq),
@@ -111,6 +126,13 @@ impl MalVal {
         match self {
             MalVal::List(seq) => Ok(seq),
             _ => Err(env::Error::TypeMismatch(Self::TN_SEQ, self.type_name())),
+        }
+    }
+
+    pub fn to_map(&self) -> Result<&Rc<HashMap<MapKey, MalVal>>, env::Error> {
+        match self {
+            MalVal::Map(map) => Ok(map),
+            _ => Err(env::Error::TypeMismatch(Self::TN_MAP, self.type_name())),
         }
     }
 
@@ -163,17 +185,32 @@ where
     }
 }
 
+impl From<HashMap<MapKey, MalVal>> for MalVal {
+    fn from(value: HashMap<MapKey, MalVal>) -> Self {
+        Self::Map(value.into())
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
 pub enum MapKey {
     Str(String),
-    Keyword(String),
+    Kwd(String),
+}
+
+impl From<MapKey> for MalVal {
+    fn from(value: MapKey) -> Self {
+        match value {
+            MapKey::Str(str) => Self::Str(str),
+            MapKey::Kwd(kwd) => Self::Kwd(kwd),
+        }
+    }
 }
 
 impl fmt::Display for MapKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             MapKey::Str(str) => MalVal::Str(str.clone()),
-            MapKey::Keyword(str) => MalVal::Kwd(str.clone()),
+            MapKey::Kwd(str) => MalVal::Kwd(str.clone()),
         };
         printer::write_value(f, &value, f.alternate())
     }
