@@ -22,6 +22,8 @@ pub enum Error {
     Reader(#[from] reader::Error),
     #[error(transparent)]
     Env(#[from] env::Error),
+    #[error("error: {0}")]
+    Custom(MalVal),
 }
 
 pub fn re(env: &Env, inp: &str) -> MalRet {

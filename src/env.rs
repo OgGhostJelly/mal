@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, crate::Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -28,6 +28,8 @@ pub enum Error {
     ParamsAfterRest,
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("try* form missing catch*")]
+    TryMissingCatch,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -96,6 +98,7 @@ impl Env {
                             "if" => r#if(&self, ast_in),
                             "do" => r#do(&self, ast_in),
                             "let*" => r#let(&self, ast_in),
+                            "try*" => r#try(&self, ast_in),
                             _ => self.eval_list(&ast),
                         }
                     } else {
@@ -229,14 +232,14 @@ impl Env {
         self.0.data.borrow_mut().insert(key, value);
     }
 
-    pub fn get(&self, key: &str) -> Result<MalVal> {
+    pub fn get(&self, key: &str) -> MalRet {
         if let Some(value) = self.0.data.borrow().get(key) {
             return Ok(value.clone());
         }
 
         match self.0.outer {
             Some(ref outer) => outer.get(key),
-            None => Err(Error::NotFound(key.into())),
+            None => Err(Error::NotFound(key.into()).into()),
         }
     }
 }
@@ -406,4 +409,28 @@ fn quasiquote_inner(ast: &MalVal) -> MalRet {
         MalVal::Map(_) | MalVal::Sym(_) => Ok(list![sym!("quote"), ast.clone()]),
         _ => Ok(ast.clone()),
     }
+}
+
+fn r#try(env: &Env, ast: &[MalVal]) -> TcoRet {
+    let ast = take_fixed_slice::<2>(ast)?;
+    let (bind, body) = r#catch(&ast[1])?;
+
+    match env.eval(&ast[0]) {
+        Ok(val) => Ok(TcoRetInner::Ret(val)),
+        Err(err) => {
+            let env = Env::new(Some(env.clone()));
+            env.set(bind.clone(), MalVal::Str(err.to_string()));
+            r#do(&env, body)
+        }
+    }
+}
+
+fn r#catch(ast: &MalVal) -> Result<(&String, &[MalVal])> {
+    let ast = ast.to_seq()?;
+    let ast = take_atleast_slice(&ast[..], 3)?;
+    if matches!(&ast[0], MalVal::Sym(sym) if sym != "catch*") {
+        return Err(Error::TryMissingCatch.into());
+    }
+
+    Ok((ast[1].to_sym()?, &ast[2..]))
 }

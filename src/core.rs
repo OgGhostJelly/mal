@@ -6,6 +6,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use saturating_cast::SaturatingCast;
 
+// TODO separate core into modules
+
 use crate::{
     env::{Env, Error, TcoRetInner},
     func, list, reader,
@@ -46,6 +48,7 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("eval", func!(eval)),
         ("empty?", func!(is_empty)),
         ("count", func!(count)),
+        ("throw", func!(throw)),
         // Atom
         ("atom", func!(atom)),
         ("atom?", func!(is_atom)),
@@ -301,6 +304,11 @@ fn count(_env: &Env, args: MalArgs) -> MalRet {
         MalVal::Map(map) => Ok(MalVal::Int(map.len().saturating_cast::<i64>())),
         _ => Err(Error::TypeMismatch(MalVal::TN_SEQ, args[0].type_name()).into()),
     }
+}
+
+fn throw(_env: &Env, args: MalArgs) -> MalRet {
+    let args = &take_fixed_vec(args, 1)?[0];
+    Err(crate::Error::Custom(args.clone()))
 }
 
 // Atom
