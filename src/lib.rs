@@ -35,6 +35,7 @@ pub fn rep(env: &Env, input: &str) {
     if !input.is_empty() {
         match re(env, input) {
             Ok(ret) => println!("> {ret:#}"),
+            Err(Error::Reader(reader::Error::None)) => {}
             Err(e) => eprintln!("{e}"),
         }
     }

@@ -26,6 +26,8 @@ pub enum Error {
     InvalidUtf8(#[from] Utf8Error),
     #[error("unexpected eof")]
     UnexpectedEof,
+    #[error("no tokens")]
+    None,
 }
 
 pub struct Reader<'a> {
@@ -67,6 +69,7 @@ impl Reader<'_> {
             b"`" => Ok(list!(sym!("quasiquote"), self.next_form()?)),
             b"~" => Ok(list!(sym!("unquote"), self.next_form()?)),
             b"~@" => Ok(list!(sym!("splice-unquote"), self.next_form()?)),
+            token if token.starts_with(b";") => Err(Error::None),
             _ => self.read_atom(),
         }?;
         Ok(val)
@@ -218,7 +221,7 @@ mod test {
 
     use crate::{types::MapKey, MalVal};
 
-    use super::{read_str, tokenize};
+    use super::{read_str, tokenize, Error};
 
     #[test]
     fn tokenizing() {
@@ -288,6 +291,11 @@ mod test {
 
         read_str(" {1  2} ").expect_err("only string keys should be allowed in map");
         read_str(" {:a} ").expect_err("mismatched keys in map should fail");
+
+        assert!(matches!(
+            read_str(" ; this is a comment "),
+            Err(Error::None)
+        ));
     }
 
     fn try_read_str(str: &str) -> MalVal {
