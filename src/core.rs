@@ -1,4 +1,10 @@
+// Most functions in core.rs need to return `MalRet` to interface with mal
+// this falsely activates the clippy::unnecessary_wraps lint
+#![allow(clippy::unnecessary_wraps)]
+
 use std::{cell::RefCell, rc::Rc};
+
+use saturating_cast::SaturatingCast;
 
 use crate::{
     env::{Env, Error, TcoRetInner},
@@ -236,7 +242,8 @@ pub fn vec(_env: &Env, args: MalArgs) -> MalRet {
 pub fn nth(_env: &Env, args: MalArgs) -> MalRet {
     let args = take_fixed_vec(args, 2)?;
     let seq = args[0].to_seq()?;
-    let index = *args[1].to_int()? as usize;
+
+    let index = (*args[1].to_int()?).saturating_cast::<usize>();
     Ok(seq.get(index).cloned().into())
 }
 
@@ -287,10 +294,11 @@ fn is_empty(_env: &Env, args: MalArgs) -> MalRet {
 
 fn count(_env: &Env, args: MalArgs) -> MalRet {
     let args = take_fixed_vec(args, 1)?;
+
     match &args[0] {
-        MalVal::List(list) => Ok(MalVal::Int(list.len() as i64)),
-        MalVal::Vector(vec) => Ok(MalVal::Int(vec.len() as i64)),
-        MalVal::Map(map) => Ok(MalVal::Int(map.len() as i64)),
+        MalVal::List(list) => Ok(MalVal::Int(list.len().saturating_cast::<i64>())),
+        MalVal::Vector(vec) => Ok(MalVal::Int(vec.len().saturating_cast::<i64>())),
+        MalVal::Map(map) => Ok(MalVal::Int(map.len().saturating_cast::<i64>())),
         _ => Err(Error::TypeMismatch(MalVal::TN_SEQ, args[0].type_name()).into()),
     }
 }

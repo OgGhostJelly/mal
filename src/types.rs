@@ -55,6 +55,7 @@ impl MalVal {
     pub const TN_SEQ: &'static str = "seq";
     pub const TN_ATOM: &'static str = "atom";
 
+    #[must_use]
     pub fn type_name(&self) -> &'static str {
         match self {
             MalVal::List(_) => Self::TN_LIST,
@@ -71,6 +72,7 @@ impl MalVal {
         }
     }
 
+    #[must_use]
     pub fn is_truthy(&self) -> bool {
         match self {
             MalVal::Bool(bool) => *bool,
@@ -79,6 +81,7 @@ impl MalVal {
         }
     }
 
+    #[must_use]
     pub fn is_nil(&self) -> bool {
         matches!(self, MalVal::Nil)
     }

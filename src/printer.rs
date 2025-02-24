@@ -24,7 +24,7 @@ pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> 
             if print_readably {
                 write!(o, "\"{}\"", escape_str(str))
             } else {
-                write!(o, "{}", str)
+                write!(o, "{str}")
             }
         }
         MalVal::Kwd(str) => write!(o, ":{str}"),
@@ -77,9 +77,9 @@ fn write_seq(
 }
 
 fn escape_str(str: &str) -> String {
-    str.replace("\\", "\\\\")
-        .replace("\n", "\\n")
-        .replace("\"", "\\\"")
+    str.replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\"', "\\\"")
 }
 
 #[cfg(test)]

@@ -40,6 +40,7 @@ struct EnvInner {
 }
 
 impl Env {
+    #[must_use]
     pub fn new(outer: Option<Env>) -> Self {
         Self(
             EnvInner {
@@ -56,21 +57,21 @@ impl Default for Env {
         let env = Self::new(None);
         env.apply_ns(crate::core::ns());
         re(
-            env.clone(),
+            &env,
             r#"(do
 (def! not (fn* (a) (if a false true)))
 
 (def! load-file (fn* [file] (eval (read-string (slurp file))))))"#,
         )
         .expect("builtin scripts should be valid mal");
-        re(env.clone(), "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
+        re(&env, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
         .expect("builtin scripts should be valid mal");
         env
     }
 }
 
 impl Env {
-    #[inline(always)]
+    #[inline]
     pub fn eval(self: &Env, ast_val: &MalVal) -> MalRet {
         self.clone().eval_inner(ast_val.clone())
     }
@@ -212,7 +213,7 @@ impl Env {
 
     pub fn apply_ns(&self, ns: &[(&'static str, MalVal)]) {
         for (key, value) in ns {
-            self.set(key.to_string(), value.clone());
+            self.set((*key).to_string(), value.clone());
         }
     }
 }
@@ -242,7 +243,7 @@ fn def(env: &Env, ast: &[MalVal]) -> MalRet {
     let mut value = env.eval(&ast[1])?;
 
     if let MalVal::MalFunc { ref mut name, .. } = value {
-        *name = Some(key.clone())
+        *name = Some(key.clone());
     }
 
     env.set(key.into(), value.clone());
@@ -394,7 +395,7 @@ fn quasiquote_inner(ast: &MalVal) -> MalRet {
                     }
                 }
 
-                new_list = list![sym!("cons"), quasiquote_inner(elt)?, new_list]
+                new_list = list![sym!("cons"), quasiquote_inner(elt)?, new_list];
             }
 
             if let MalVal::Vector(_) = ast {
