@@ -18,12 +18,14 @@ pub enum MalVal {
     Kwd(String),
     Int(i64),
     Bool(bool),
-    Func(fn(&Env, MalArgs) -> MalRet),
+    Func(&'static str, fn(&Env, MalArgs) -> MalRet),
     MalFunc {
+        name: Option<String>,
         outer: Env,
         binds: Rc<Vec<String>>,
         rest_bind: Rc<RestBind>,
         body: Rc<Vec<MalVal>>,
+        is_macro: bool,
     },
     Nil,
     Atom(Rc<RefCell<MalVal>>),
@@ -63,7 +65,7 @@ impl MalVal {
             MalVal::Kwd(_) => Self::TN_KEYWORD,
             MalVal::Int(_) => Self::TN_INT,
             MalVal::Bool(_) => Self::TN_BOOL,
-            MalVal::Func(_) | MalVal::MalFunc { .. } => Self::TN_FUNCTION,
+            MalVal::Func(_, _) | MalVal::MalFunc { .. } => Self::TN_FUNCTION,
             MalVal::Nil => Self::TN_NIL,
             MalVal::Atom(_) => Self::TN_ATOM,
         }
@@ -75,6 +77,10 @@ impl MalVal {
             MalVal::Nil => false,
             _ => true,
         }
+    }
+
+    pub fn is_nil(&self) -> bool {
+        matches!(self, MalVal::Nil)
     }
 
     pub fn to_int(&self) -> Result<&i64, env::Error> {
@@ -121,7 +127,7 @@ impl MalVal {
 
     pub fn to_func(&self) -> Result<&Self, env::Error> {
         match self {
-            MalVal::Func(_) | MalVal::MalFunc { .. } => Ok(self),
+            MalVal::Func(_, _) | MalVal::MalFunc { .. } => Ok(self),
             _ => Err(env::Error::TypeMismatch(
                 Self::TN_FUNCTION,
                 self.type_name(),
@@ -139,6 +145,18 @@ impl From<i64> for MalVal {
 impl From<bool> for MalVal {
     fn from(value: bool) -> Self {
         Self::Bool(value)
+    }
+}
+
+impl<T> From<Option<T>> for MalVal
+where
+    T: Into<MalVal>,
+{
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => value.into(),
+            None => MalVal::Nil,
+        }
     }
 }
 
@@ -239,5 +257,12 @@ macro_rules! kwd {
 macro_rules! atom {
     ( $x:expr ) => {
         $crate::MalVal::Atom(std::rc::Rc::new(std::cell::RefCell::new($x.into())))
+    };
+}
+
+#[macro_export]
+macro_rules! func {
+    ( $x:expr ) => {
+        $crate::MalVal::Func(stringify!($x), $x)
     };
 }

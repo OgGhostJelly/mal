@@ -61,6 +61,8 @@ impl Default for Env {
 (def! load-file (fn* [file] (eval (read-string (slurp file))))))"#,
         )
         .expect("builtin scripts should be valid mal");
+        //re(env.clone(), "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
+        //.expect("builtin scripts should be valid mal");
         env
     }
 }
@@ -84,6 +86,7 @@ impl Env {
                         let ast_in = &ast[1..];
                         match sym.as_str() {
                             "def!" => Ok(TcoRetInner::Ret(def(&self, ast_in)?)),
+                            "defmacro!" => Ok(TcoRetInner::Ret(defmacro(&self, ast_in)?)),
                             "fn*" => Ok(TcoRetInner::Ret(r#fn(&self, ast_in)?)),
                             "quote" => Ok(TcoRetInner::Ret(quote(&self, ast_in)?)),
                             "quasiquote" => quasiquote(&self, ast_in),
@@ -124,7 +127,7 @@ impl Env {
                 }
 
                 // Types that evaluate to themselves:
-                MalVal::Func(_)
+                MalVal::Func(_, _)
                 | MalVal::MalFunc { .. }
                 | MalVal::Str(_)
                 | MalVal::Kwd(_)
@@ -139,24 +142,32 @@ impl Env {
     fn eval_list(self: &Env, ast: &Rc<Vec<MalVal>>) -> TcoRet {
         let op = self.eval(&ast[0])?;
 
-        let mut args = Vec::new();
-        for value in &ast[1..] {
-            args.push(self.eval(value)?);
-        }
+        if matches!(op, MalVal::MalFunc { is_macro, .. } if is_macro) {
+            self.apply(&op, ast[1..].into())
+        } else {
+            let mut args = Vec::new();
+            for value in &ast[1..] {
+                args.push(self.eval(value)?);
+            }
 
-        self.apply(&op, args)
+            self.apply(&op, args)
+        }
     }
 
     pub fn apply(self: &Env, op: &MalVal, args: MalArgs) -> TcoRet {
         match op {
             MalVal::Sym(sym) => Ok(TcoRetInner::Ret(self.get(sym)?)),
-            MalVal::Func(f) => f(self, args).map(TcoRetInner::Ret),
+            MalVal::Func(_, f) => f(self, args).map(TcoRetInner::Ret),
             MalVal::MalFunc {
+                name,
                 outer,
                 binds,
                 rest_bind,
                 body,
+                is_macro,
             } => {
+                _ = (name, is_macro);
+
                 let mut args = match rest_bind.as_ref() {
                     RestBind::None => take_fixed_vec(args, binds.len())?,
                     RestBind::Ignore | RestBind::Bind(_) => take_atleast_vec(args, binds.len())?,
@@ -217,7 +228,34 @@ fn def(env: &Env, ast: &[MalVal]) -> MalRet {
 
     let key = ast[0].to_sym()?;
 
-    let value = env.eval(&ast[1])?;
+    let mut value = env.eval(&ast[1])?;
+
+    if let MalVal::MalFunc { ref mut name, .. } = value {
+        *name = Some(key.clone())
+    }
+
+    env.set(key.into(), value.clone());
+    Ok(value)
+}
+
+fn defmacro(env: &Env, ast: &[MalVal]) -> MalRet {
+    let ast = take_fixed_slice::<2>(ast)?;
+
+    let key = ast[0].to_sym()?;
+
+    let mut value = env.eval(&ast[1])?;
+
+    let MalVal::MalFunc {
+        ref mut is_macro,
+        ref mut name,
+        ..
+    } = value
+    else {
+        return Err(Error::TypeMismatch(MalVal::TN_FUNCTION, value.type_name()).into());
+    };
+    *is_macro = true;
+    *name = Some(key.clone());
+
     env.set(key.into(), value.clone());
     Ok(value)
 }
@@ -303,10 +341,12 @@ fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
     let body = ast[1..].to_vec();
 
     Ok(MalVal::MalFunc {
+        name: None,
         outer: env.clone(),
         binds: Rc::new(binds),
         rest_bind: Rc::new(rest_bind),
         body: Rc::new(body),
+        is_macro: false,
     })
 }
 

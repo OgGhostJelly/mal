@@ -2,47 +2,50 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     env::{Env, Error, TcoRetInner},
-    reader,
+    func, list, reader,
     types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
 };
 
 pub const fn ns() -> &'static [(&'static str, MalVal)] {
     &[
         // Numeric operations
-        ("+", MalVal::Func(add)),
-        ("-", MalVal::Func(sub)),
-        ("*", MalVal::Func(mul)),
-        ("/", MalVal::Func(div)),
+        ("+", func!(add)),
+        ("-", func!(sub)),
+        ("*", func!(mul)),
+        ("/", func!(div)),
         // Comparative operations
-        ("=", MalVal::Func(eq)),
-        ("<", MalVal::Func(lt)),
-        ("<=", MalVal::Func(le)),
-        (">", MalVal::Func(gt)),
-        (">=", MalVal::Func(ge)),
+        ("=", func!(eq)),
+        ("<", func!(lt)),
+        ("<=", func!(le)),
+        (">", func!(gt)),
+        (">=", func!(ge)),
         // Printing
-        ("pr-str", MalVal::Func(pr_str)),
-        ("str", MalVal::Func(str)),
-        ("print", MalVal::Func(print)),
-        ("println", MalVal::Func(println)),
+        ("pr-str", func!(pr_str)),
+        ("str", func!(str)),
+        ("print", func!(print)),
+        ("println", func!(println)),
         // Strings
-        ("read-string", MalVal::Func(read_string)),
-        ("slurp", MalVal::Func(slurp)),
+        ("read-string", func!(read_string)),
+        ("slurp", func!(slurp)),
         // List
-        ("list", MalVal::Func(list)),
-        ("list?", MalVal::Func(is_list)),
-        ("cons", MalVal::Func(cons)),
-        ("concat", MalVal::Func(concat)),
-        ("vec", MalVal::Func(vec)),
+        ("list", func!(list)),
+        ("list?", func!(is_list)),
+        ("cons", func!(cons)),
+        ("concat", func!(concat)),
+        ("vec", func!(vec)),
+        ("nth", func!(nth)),
+        ("first", func!(first)),
+        ("rest", func!(rest)),
         // Misc
-        ("eval", MalVal::Func(eval)),
-        ("empty?", MalVal::Func(is_empty)),
-        ("count", MalVal::Func(count)),
+        ("eval", func!(eval)),
+        ("empty?", func!(is_empty)),
+        ("count", func!(count)),
         // Atom
-        ("atom", MalVal::Func(atom)),
-        ("atom?", MalVal::Func(is_atom)),
-        ("deref", MalVal::Func(deref)),
-        ("reset!", MalVal::Func(reset)),
-        ("swap!", MalVal::Func(swap)),
+        ("atom", func!(atom)),
+        ("atom?", func!(is_atom)),
+        ("deref", func!(deref)),
+        ("reset!", func!(reset)),
+        ("swap!", func!(swap)),
     ]
 }
 
@@ -228,6 +231,37 @@ pub fn vec(_env: &Env, args: MalArgs) -> MalRet {
         }
     }
     Ok(MalVal::Vector(Rc::new(vec)))
+}
+
+pub fn nth(_env: &Env, args: MalArgs) -> MalRet {
+    let args = take_fixed_vec(args, 2)?;
+    let seq = args[0].to_seq()?;
+    let index = *args[1].to_int()? as usize;
+    Ok(seq.get(index).cloned().into())
+}
+
+pub fn first(_env: &Env, args: MalArgs) -> MalRet {
+    let args = take_fixed_vec(args, 1)?;
+    let seq = args[0].to_seq()?;
+    Ok(seq.first().cloned().into())
+}
+
+pub fn rest(_env: &Env, args: MalArgs) -> MalRet {
+    let seq = &take_fixed_vec(args, 1)?[0];
+    if seq.is_nil() {
+        return Ok(list![]);
+    }
+
+    let seq = seq.to_seq()?;
+    if seq.is_empty() {
+        return Ok(list![]);
+    }
+
+    let mut new_vec = Vec::with_capacity(seq.len() - 1);
+    for ele in &seq[1..] {
+        new_vec.push(ele.clone());
+    }
+    Ok(MalVal::List(new_vec.into()))
 }
 
 // Misc

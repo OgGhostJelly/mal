@@ -35,7 +35,20 @@ pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> 
             '{',
             '}',
         ),
-        MalVal::Func(_) | MalVal::MalFunc { .. } => write!(o, "#<function>"),
+        MalVal::Func(name, _) => write!(o, "#<function:{name}>"),
+        MalVal::MalFunc { name, is_macro, .. } => {
+            if *is_macro {
+                match name {
+                    Some(name) => write!(o, "#<macro:{name}>"),
+                    None => write!(o, "#<macro>"),
+                }
+            } else {
+                match name {
+                    Some(name) => write!(o, "#<function:{name}>"),
+                    None => write!(o, "#<function>"),
+                }
+            }
+        }
         MalVal::Atom(atom) => {
             if print_readably {
                 write!(o, "(atom {:#})", atom.borrow())
