@@ -52,19 +52,47 @@ impl Env {
             .into(),
         )
     }
+
+    #[must_use]
+    pub fn top(&self) -> &Env {
+        let mut env = self;
+        while let Some(e) = &env.0.outer {
+            env = e;
+        }
+        env
+    }
 }
 
 impl Default for Env {
     fn default() -> Self {
         let env = Self::new(None);
         env.apply_ns(crate::core::ns());
+
+        // TODO: temp bindings, actually add them later
         re(
             &env,
             r#"(do
-(def! not (fn* (a) (if a false true)))
+            (def! time-ms nil)
+            (def! meta nil)
+            (def! with-meta nil)
+            (def! fn? nil)
+            (def! string? nil)
+            (def! number? nil)
+            (def! seq nil)
+            (def! and nil)
+            (def! macro? nil)
+            (def! conj nil))"#,
+        )
+        .expect("builtin scripts should be valid mal");
 
-(def! load-file (fn* [file] (eval (read-string
-    (str "(do" (slurp file) "\n)"))))))"#,
+        re(
+            &env,
+            r#"(do
+            (def! *host-language* "ogj-rust")
+
+            (def! not (fn* (a) (if a false true)))
+
+            (def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\nnil)"))))))"#,
         )
         .expect("builtin scripts should be valid mal");
         re(&env, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
@@ -303,8 +331,8 @@ fn r#let(env: &Env, ast: &[MalVal]) -> TcoRet {
 
     for chunk in binds.chunks(2) {
         let key = chunk[0].to_sym()?;
-        let value = &chunk[1];
-        env.set(key.clone(), value.clone());
+        let value = env.eval(&chunk[1])?;
+        env.set(key.clone(), value);
     }
 
     r#do(&env, &ast[1..])
@@ -437,4 +465,71 @@ fn r#catch(ast: &MalVal) -> Result<(&String, &[MalVal])> {
     }
 
     Ok((ast[1].to_sym()?, &ast[2..]))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{re, Error, MalVal};
+
+    use super::Env;
+
+    #[test]
+    fn r#math() {
+        let env = Env::default();
+        assert!(matches!(
+            re(&env, r#"(= (+ 1  2 ) 3)"#),
+            Ok(MalVal::Bool(true))
+        ));
+        assert!(matches!(
+            re(&env, r#" (= ( - 4 5) -1 ) "#),
+            Ok(MalVal::Bool(true))
+        ));
+        assert!(matches!(
+            re(&env, r#"(= (* 2 3 4) 24 (/ 48 2))"#),
+            Ok(MalVal::Bool(true))
+        ));
+    }
+
+    #[test]
+    fn r#let() {
+        let env = Env::default();
+        assert!(matches!(re(&env, r#"(def! a 4)"#), Ok(MalVal::Int(4))));
+        assert!(matches!(re(&env, r#"(def! b a)"#), Ok(MalVal::Int(4))));
+        assert!(matches!(
+            re(&env, r#"(let* [x 1 y x] () (= x y))"#),
+            Ok(MalVal::Bool(true))
+        ));
+        assert!(matches!(
+            re(&env, r#"(let* (x b y 6) (= x (- y 2)))"#),
+            Ok(MalVal::Bool(true))
+        ));
+    }
+
+    #[test]
+    fn try_catch() {
+        let env = Env::default();
+        assert!(
+            matches!(re(&env, r#"(throw "uh oh")"#), Err(Error::Custom(MalVal::Str(err))) if err == "uh oh")
+        );
+        assert!(
+            matches!(re(&env, r#"(try* (throw "uh oh") (catch* err err))"#), Ok(MalVal::Str(err)) if err == "error: uh oh")
+        );
+    }
+
+    #[test]
+    fn r#fn() {
+        let env = Env::default();
+
+        assert!(matches!(
+            re(
+                &env,
+                r#"
+            (do
+                (def! inc (fn* [ex & rest] (eval `(+ ex 1 ~@rest))))
+                (inc (inc 3) 3))
+            "#
+            ),
+            Ok(MalVal::Int(8))
+        ));
+    }
 }

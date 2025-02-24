@@ -146,7 +146,7 @@ impl MalVal {
     pub fn to_atom(&self) -> Result<&Rc<RefCell<MalVal>>, env::Error> {
         match self {
             MalVal::Atom(atom) => Ok(atom),
-            _ => Err(env::Error::TypeMismatch(Self::TN_STRING, self.type_name())),
+            _ => Err(env::Error::TypeMismatch(Self::TN_ATOM, self.type_name())),
         }
     }
 
@@ -312,5 +312,12 @@ macro_rules! atom {
 macro_rules! func {
     ( $x:expr ) => {
         $crate::MalVal::Func(None, $x)
+    };
+}
+
+#[macro_export]
+macro_rules! throw {
+    ( $x:expr ) => {
+        return Err($crate::Error::Custom($x.into()))
     };
 }

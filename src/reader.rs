@@ -69,14 +69,14 @@ impl Reader<'_> {
             b"`" => Ok(list!(sym!("quasiquote"), self.next_form()?)),
             b"~" => Ok(list!(sym!("unquote"), self.next_form()?)),
             b"~@" => Ok(list!(sym!("splice-unquote"), self.next_form()?)),
-            token if token.starts_with(b";") => Err(Error::None),
+            token if token.starts_with(b";") => self.next_form(),
             _ => self.read_atom(),
         }?;
         Ok(val)
     }
 
     fn next_form(&mut self) -> Result<MalVal> {
-        self.next();
+        self.next().ok_or(Error::None)?;
         self.read_form()
     }
 

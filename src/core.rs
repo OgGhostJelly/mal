@@ -26,8 +26,9 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         // string
         ("pr-str", func!(string::pr_str)),
         ("str", func!(string::str)),
-        ("print", func!(string::print)),
+        ("prn", func!(string::prn)),
         ("println", func!(string::println)),
+        ("readline", func!(string::readline)),
         // meta
         ("read-string", func!(meta::read_string)),
         ("slurp", func!(meta::slurp)),
@@ -46,7 +47,7 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("assoc", func!(collection::assoc)),
         ("dissoc", func!(collection::dissoc)),
         ("get", func!(collection::get)),
-        ("contains", func!(collection::contains)),
+        ("contains?", func!(collection::contains)),
         ("keys", func!(collection::keys)),
         ("vals", func!(collection::vals)),
         // atom
@@ -60,7 +61,7 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("vector", func!(cons::vector)),
         ("symbol", func!(cons::symbol)),
         ("keyword", func!(cons::keyword)),
-        ("hashmap", func!(cons::hashmap)),
+        ("hash-map", func!(cons::hashmap)),
         // predicate
         ("nil?", func!(predicate::nil)),
         ("true?", func!(predicate::r#true)),
@@ -137,7 +138,15 @@ mod cmp {
 }
 
     pub fn eq(_env: &Env, args: MalArgs) -> MalRet {
-        impl_compop!(args, ==)
+        let args = take_atleast_vec(args, 1)?;
+        let mut lhs = &args[0];
+        for rhs in args.iter().skip(1) {
+            if lhs != rhs {
+                return Ok(MalVal::Bool(false));
+            }
+            lhs = rhs;
+        }
+        Ok(MalVal::Bool(true))
     }
 
     pub fn lt(_env: &Env, args: MalArgs) -> MalRet {
@@ -160,7 +169,8 @@ mod cmp {
 mod string {
     use crate::{
         env::Env,
-        types::{MalArgs, MalRet, MalVal},
+        str, throw,
+        types::{take_fixed_vec, MalArgs, MalRet, MalVal},
     };
 
     pub fn pr_str(_env: &Env, args: MalArgs) -> MalRet {
@@ -181,7 +191,7 @@ mod string {
         ))
     }
 
-    pub fn print(_env: &Env, args: MalArgs) -> MalRet {
+    pub fn prn(_env: &Env, args: MalArgs) -> MalRet {
         let string = args
             .into_iter()
             .map(|x| format!("{x:#}"))
@@ -199,6 +209,28 @@ mod string {
             .join(" ");
         println!("{string}");
         Ok(MalVal::Str(string))
+    }
+
+    pub fn readline(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 1)?;
+        let prompt = args[0].to_str()?;
+
+        let mut rl = rustyline::Editor::<(), rustyline::history::DefaultHistory>::new().unwrap();
+        match rl.load_history(".mal-history") {
+            Ok(()) => {}
+            Err(e) => throw!(str!(e.to_string())),
+        }
+
+        match rl.readline(prompt) {
+            Ok(input) => {
+                let _ = rl.add_history_entry(&input);
+                Ok(str!(input))
+            }
+            Err(
+                rustyline::error::ReadlineError::Interrupted | rustyline::error::ReadlineError::Eof,
+            ) => Ok(MalVal::Nil),
+            Err(err) => throw!(str!(err.to_string())),
+        }
     }
 }
 
@@ -235,6 +267,7 @@ mod meta {
         for value in args {
             env.eval(value)?;
         }
+
         env.eval(&last[0])
     }
 
@@ -427,6 +460,7 @@ mod collection {
 
     pub fn get(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_fixed_vec(args, 2)?;
+        println!("(get {:#} {:#})", args[0], args[1]);
         let map = args[0].to_map()?;
         let key = args[1].to_map_key()?;
         Ok(map.get(&key).cloned().into())
@@ -483,7 +517,9 @@ mod atom {
 
     pub fn deref(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_fixed_vec(args, 1)?;
-        let value = args[0].to_atom()?;
+        let MalVal::Atom(ref value) = args[0] else {
+            return Ok(args[0].clone());
+        };
         let value = value.as_ref().borrow().clone();
         Ok(value)
     }

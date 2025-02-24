@@ -4,18 +4,8 @@ use crate::MalVal;
 
 pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> fmt::Result {
     match value {
-        MalVal::List(values) => {
-            if print_readably {
-                o.write_char('\'')?;
-            }
-            write_seq(o, values.iter(), '(', ')')
-        }
-        MalVal::Sym(sym) => {
-            if print_readably {
-                o.write_char('\'')?;
-            }
-            o.write_str(sym)
-        }
+        MalVal::List(values) => write_seq(o, values.iter(), print_readably, '(', ')'),
+        MalVal::Sym(sym) => o.write_str(sym),
         MalVal::Int(num) => o.write_str(&num.to_string()),
         MalVal::Bool(true) => o.write_str("true"),
         MalVal::Bool(false) => o.write_str("false"),
@@ -28,10 +18,11 @@ pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> 
             }
         }
         MalVal::Kwd(str) => write!(o, ":{str}"),
-        MalVal::Vector(values) => write_seq(o, values.iter(), '[', ']'),
+        MalVal::Vector(values) => write_seq(o, values.iter(), print_readably, '[', ']'),
         MalVal::Map(map) => write_seq(
             o,
             map.iter().flat_map(|(a, b)| [a.to_string(), b.to_string()]),
+            print_readably,
             '{',
             '}',
         ),
@@ -65,6 +56,7 @@ pub fn write_value(o: &mut impl Write, value: &MalVal, print_readably: bool) -> 
 fn write_seq(
     o: &mut impl Write,
     iter: impl Iterator<Item = impl Display>,
+    print_readably: bool,
     begin: char,
     end: char,
 ) -> fmt::Result {
@@ -73,7 +65,11 @@ fn write_seq(
         if index != 0 {
             o.write_char(' ')?;
         }
-        write!(o, "{value}")?;
+        if print_readably {
+            write!(o, "{value:#}")?;
+        } else {
+            write!(o, "{value}")?;
+        }
     }
     o.write_char(end)?;
     Ok(())
