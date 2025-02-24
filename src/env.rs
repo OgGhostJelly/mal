@@ -3,8 +3,8 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::{
     list, re, reader, sym,
     types::{
-        take_atleast_slice, take_atleast_vec, take_fixed_slice, take_fixed_vec, MalArgs, MalRet,
-        MalVal, RestBind,
+        take_atleast_slice, take_atleast_vec, take_between_slice, take_fixed_slice, take_fixed_vec,
+        MalArgs, MalRet, MalVal, RestBind,
     },
 };
 
@@ -22,6 +22,8 @@ pub enum Error {
     FixedParamsMismatch(usize, usize),
     #[error("expected atleast {0} param(s) got {1}")]
     AtleastParamsMismatch(usize, usize),
+    #[error("expected between {0} and {1} param(s) got {2}")]
+    BetweenParamsMismatch(usize, usize, usize),
     #[error("cannot put params after the & arg")]
     ParamsAfterRest,
     #[error("io: {0}")]
@@ -61,8 +63,8 @@ impl Default for Env {
 (def! load-file (fn* [file] (eval (read-string (slurp file))))))"#,
         )
         .expect("builtin scripts should be valid mal");
-        //re(env.clone(), "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
-        //.expect("builtin scripts should be valid mal");
+        re(env.clone(), "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
+        .expect("builtin scripts should be valid mal");
         env
     }
 }
@@ -302,14 +304,16 @@ fn r#do(env: &Env, ast: &[MalVal]) -> TcoRet {
 }
 
 fn r#if(env: &Env, ast: &[MalVal]) -> TcoRet {
-    let ast = take_fixed_slice::<3>(ast)?;
+    let ast = take_between_slice(ast, 2, 3)?;
 
     let cond = env.eval(&ast[0])?;
 
     if cond.is_truthy() {
         Ok(TcoRetInner::Unevaluated(env.clone(), ast[1].clone()))
+    } else if let Some(r#else) = ast.get(2) {
+        Ok(TcoRetInner::Unevaluated(env.clone(), r#else.clone()))
     } else {
-        Ok(TcoRetInner::Unevaluated(env.clone(), ast[2].clone()))
+        Ok(TcoRetInner::Ret(MalVal::Nil))
     }
 }
 

@@ -198,6 +198,14 @@ pub fn take_fixed_vec(value: MalArgs, len: usize) -> Result<MalArgs, Error> {
     }
 }
 
+pub fn take_between_slice(value: &[MalVal], from: usize, to: usize) -> Result<&[MalVal], Error> {
+    if value.len() < from || value.len() > to {
+        return Err(env::Error::BetweenParamsMismatch(from, to, value.len()).into());
+    }
+
+    Ok(value)
+}
+
 pub fn take_atleast_slice(value: &[MalVal], at_least: usize) -> Result<&[MalVal], Error> {
     match value.len().cmp(&at_least) {
         Ordering::Less => Err(env::Error::AtleastParamsMismatch(at_least, value.len()).into()),
