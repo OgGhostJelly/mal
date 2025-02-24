@@ -18,7 +18,7 @@ pub enum MalVal {
     Kwd(String),
     Int(i64),
     Bool(bool),
-    Func(&'static str, fn(&Env, MalArgs) -> MalRet),
+    Func(Option<String>, fn(&Env, MalArgs) -> MalRet),
     MalFunc {
         name: Option<String>,
         outer: Env,
@@ -274,6 +274,6 @@ macro_rules! atom {
 #[macro_export]
 macro_rules! func {
     ( $x:expr ) => {
-        $crate::MalVal::Func(stringify!($x), $x)
+        $crate::MalVal::Func(None, $x)
     };
 }

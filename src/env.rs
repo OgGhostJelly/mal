@@ -219,7 +219,13 @@ impl Env {
 }
 
 impl Env {
-    pub fn set(&self, key: String, value: MalVal) {
+    pub fn set(&self, key: String, mut value: MalVal) {
+        if let MalVal::MalFunc { ref mut name, .. } = value {
+            *name = Some(key.clone());
+        } else if let MalVal::Func(ref mut name, _) = value {
+            *name = Some(key.clone());
+        }
+
         self.0.data.borrow_mut().insert(key, value);
     }
 
@@ -240,11 +246,7 @@ fn def(env: &Env, ast: &[MalVal]) -> MalRet {
 
     let key = ast[0].to_sym()?;
 
-    let mut value = env.eval(&ast[1])?;
-
-    if let MalVal::MalFunc { ref mut name, .. } = value {
-        *name = Some(key.clone());
-    }
+    let value = env.eval(&ast[1])?;
 
     env.set(key.into(), value.clone());
     Ok(value)
@@ -258,15 +260,12 @@ fn defmacro(env: &Env, ast: &[MalVal]) -> MalRet {
     let mut value = env.eval(&ast[1])?;
 
     let MalVal::MalFunc {
-        ref mut is_macro,
-        ref mut name,
-        ..
+        ref mut is_macro, ..
     } = value
     else {
         return Err(Error::TypeMismatch(MalVal::TN_FUNCTION, value.type_name()).into());
     };
     *is_macro = true;
-    *name = Some(key.clone());
 
     env.set(key.into(), value.clone());
     Ok(value)
