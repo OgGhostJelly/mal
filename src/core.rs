@@ -30,6 +30,7 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("read-string", func!(meta::read_string)),
         ("slurp", func!(meta::slurp)),
         ("eval", func!(meta::eval)),
+        ("apply", func!(meta::apply)),
         // collection
         ("list", func!(collection::list)),
         ("list?", func!(collection::is_list)),
@@ -41,6 +42,7 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("rest", func!(collection::rest)),
         ("empty?", func!(collection::is_empty)),
         ("count", func!(collection::count)),
+        ("map", func!(collection::map)),
         // atom
         ("atom", func!(atom::atom)),
         ("atom?", func!(atom::is_atom)),
@@ -209,6 +211,31 @@ mod meta {
         }
         env.eval(&last[0])
     }
+
+    pub fn apply(env: &Env, args: MalArgs) -> MalRet {
+        let args = take_atleast_vec(args, 2)?;
+        let fun = args[0].to_func()?;
+
+        let mut new_args = Vec::with_capacity(args.len());
+
+        for arg in &args[1..] {
+            match arg {
+                MalVal::List(list) => {
+                    for arg in list.iter() {
+                        new_args.push(arg.clone());
+                    }
+                }
+                MalVal::Vector(vec) => {
+                    for arg in vec.iter() {
+                        new_args.push(arg.clone());
+                    }
+                }
+                _ => new_args.push(arg.clone()),
+            }
+        }
+
+        env.apply(fun, new_args)?.tco_eval()
+    }
 }
 
 mod collection {
@@ -327,13 +354,28 @@ mod collection {
             _ => Err(Error::TypeMismatch(MalVal::TN_SEQ, args[0].type_name()).into()),
         }
     }
+
+    pub fn map(env: &Env, args: MalArgs) -> MalRet {
+        let args = take_fixed_vec(args, 2)?;
+        let fun = args[0].to_func()?;
+        let seq = args[1].to_seq()?;
+
+        let mut new_seq = Vec::with_capacity(seq.len());
+
+        for value in seq.iter() {
+            let ret = env.apply(fun, vec![value.clone()])?.tco_eval()?;
+            new_seq.push(ret);
+        }
+
+        Ok(MalVal::List(new_seq.into()))
+    }
 }
 
 mod atom {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        env::{Env, TcoRetInner},
+        env::Env,
         types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
     };
 
@@ -373,10 +415,7 @@ mod atom {
         let (atom, fun) = (args[0].to_atom()?, args[1].to_func()?);
 
         rest.insert(0, atom.borrow().clone());
-        let ret = match env.apply(fun, rest)? {
-            TcoRetInner::Ret(val) => val,
-            TcoRetInner::Unevaluated(env, val) => env.eval(&val)?,
-        };
+        let ret = env.apply(fun, rest)?.tco_eval()?;
 
         atom.replace(ret.clone());
         Ok(ret)

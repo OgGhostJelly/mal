@@ -193,11 +193,7 @@ impl Env {
 
                 let ret = r#do(&env, &body[..])?;
                 if *is_macro {
-                    let ret = match ret {
-                        TcoRetInner::Ret(val) => val,
-                        TcoRetInner::Unevaluated(env, val) => env.eval(&val)?,
-                    };
-                    Ok(TcoRetInner::Unevaluated(outer.clone(), ret))
+                    Ok(TcoRetInner::Unevaluated(outer.clone(), ret.tco_eval()?))
                 } else {
                     Ok(ret)
                 }
@@ -282,6 +278,15 @@ pub enum TcoRetInner {
     Ret(MalVal),
     /// Unevaluated mal value that should be tail call optimized.
     Unevaluated(Env, MalVal),
+}
+
+impl TcoRetInner {
+    pub fn tco_eval(self) -> MalRet {
+        match self {
+            TcoRetInner::Ret(val) => Ok(val),
+            TcoRetInner::Unevaluated(env, val) => env.eval(&val),
+        }
+    }
 }
 
 fn r#let(env: &Env, ast: &[MalVal]) -> TcoRet {
