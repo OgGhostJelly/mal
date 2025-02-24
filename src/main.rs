@@ -1,4 +1,4 @@
-#![allow(clippy::pedantic)]
+#![warn(clippy::pedantic)]
 
 use std::{env, rc::Rc};
 
@@ -30,12 +30,12 @@ fn main() {
         match rl.readline("user> ") {
             Ok(input) => {
                 let _ = rl.add_history_entry(&input);
-                rep(env.clone(), &input)
+                rep(env.clone(), &input);
             }
             Err(ReadlineError::Interrupted) => continue,
             Err(ReadlineError::Eof) => break,
             Err(err) => {
-                eprintln!("Error: {:?}", err);
+                eprintln!("Error: {err:?}");
                 break;
             }
         }

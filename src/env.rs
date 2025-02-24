@@ -187,7 +187,16 @@ impl Env {
                     env.set(key.clone(), MalVal::List(Rc::new(rest)));
                 }
 
-                r#do(&env, &body[..])
+                let ret = r#do(&env, &body[..])?;
+                if *is_macro {
+                    let ret = match ret {
+                        TcoRetInner::Ret(val) => val,
+                        TcoRetInner::Unevaluated(env, val) => env.eval(&val)?,
+                    };
+                    Ok(TcoRetInner::Unevaluated(outer.clone(), ret))
+                } else {
+                    Ok(ret)
+                }
             }
             MalVal::List(_)
             | MalVal::Vector(_)
