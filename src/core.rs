@@ -4,6 +4,10 @@
 this falsely activates the clippy::unnecessary_wraps lint"#
 )]
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use saturating_cast::SaturatingCast;
+
 use crate::{
     env::Env,
     func,
@@ -23,6 +27,7 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("<=", func!(cmp::le)),
         (">", func!(cmp::gt)),
         (">=", func!(cmp::ge)),
+        ("and", func!(cmp::and)),
         // string
         ("pr-str", func!(string::pr_str)),
         ("str", func!(string::str)),
@@ -50,6 +55,8 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("contains?", func!(collection::contains)),
         ("keys", func!(collection::keys)),
         ("vals", func!(collection::vals)),
+        ("seq", func!(collection::seq)),
+        ("conj", func!(collection::conj)),
         // atom
         ("atom", func!(atom::atom)),
         ("atom?", func!(atom::is_atom)),
@@ -74,8 +81,11 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("map?", func!(predicate::map)),
         ("fn?", func!(predicate::is_fn)),
         ("macro?", func!(predicate::is_macro)),
+        ("string?", func!(predicate::is_string)),
+        ("number?", func!(predicate::is_number)),
         // other
         ("throw", func!(throw)),
+        ("time-ms", func!(time_ms)),
     ]
 }
 
@@ -165,6 +175,19 @@ mod cmp {
 
     pub fn ge(_env: &Env, args: MalArgs) -> MalRet {
         impl_compop!(args, >=)
+    }
+
+    pub fn and(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_atleast_vec(args, 1)?;
+        let mut lhs = args[0].is_truthy();
+        for rhs in args.iter().skip(1) {
+            let rhs = rhs.is_truthy();
+            if !(lhs && rhs) {
+                return Ok(MalVal::Bool(false));
+            }
+            lhs = rhs;
+        }
+        Ok(MalVal::Bool(true))
     }
 }
 
@@ -494,6 +517,41 @@ mod collection {
 
         Ok(MalVal::List(Rc::new(keys)))
     }
+
+    pub fn seq(_env: &Env, args: MalArgs) -> MalRet {
+        let arg = take_fixed_vec(args, 1)?.swap_remove(0);
+
+        Ok(match arg {
+            MalVal::List(ref list) if list.is_empty() => MalVal::Nil,
+            MalVal::Vector(ref vec) if vec.is_empty() => MalVal::Nil,
+            MalVal::Str(str) if str.is_empty() => MalVal::Nil,
+
+            MalVal::List(_) => arg,
+            MalVal::Vector(vec) => MalVal::List(vec),
+            MalVal::Str(str) => MalVal::List(Rc::new(
+                str.chars().map(|ch| MalVal::Str(ch.to_string())).collect(),
+            )),
+
+            _ => return Err(Error::TypeMismatch(MalVal::TN_SEQ, arg.type_name()).into()),
+        })
+    }
+
+    pub fn conj(_env: &Env, args: MalArgs) -> MalRet {
+        let args = take_atleast_vec(args, 2)?;
+        let seq = args[0].to_seq()?;
+        let rest = &args[1..];
+
+        let mut new_seq = Vec::with_capacity(seq.len() + rest.len());
+
+        for value in seq.iter() {
+            new_seq.push(value.clone());
+        }
+        for value in rest {
+            new_seq.push(value.clone());
+        }
+
+        Ok(MalVal::List(new_seq.into()))
+    }
 }
 
 mod atom {
@@ -650,9 +708,26 @@ mod predicate {
             _ => false,
         })
     }
+    pub fn is_string(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| matches!(val, MalVal::Str(_)))
+    }
+    pub fn is_number(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| matches!(val, MalVal::Int(_)))
+    }
 }
 
 fn throw(_env: &Env, args: MalArgs) -> MalRet {
     let args = &take_fixed_vec(args, 1)?[0];
     Err(crate::Error::Custom(args.clone()))
+}
+
+fn time_ms(_env: &Env, args: MalArgs) -> MalRet {
+    let _ = take_fixed_vec(args, 0)?;
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis()
+        .saturating_cast();
+    Ok(MalVal::Int(since_the_epoch))
 }

@@ -74,18 +74,13 @@ impl Default for Env {
         let env = Self::new("TOP".into(), None);
         env.apply_ns(crate::core::ns());
 
-        // TODO: temp bindings, actually add them later
+        // TODO: temp bindings that mal requires to be self-hosted
+        //       probably should add these in the future.
         re(
             &env,
             r#"(do
-            (def! time-ms nil)
             (def! meta nil)
-            (def! with-meta nil)
-            (def! string? nil)
-            (def! number? nil)
-            (def! seq nil)
-            (def! and nil)
-            (def! conj nil))"#,
+            (def! with-meta nil))"#,
         )
         .expect("builtin scripts should be valid mal");
 
