@@ -76,9 +76,9 @@ fn write_seq(
 }
 
 fn escape_str(str: &str) -> String {
-    str.replace('\\', "\\\\")
-        .replace('\n', "\\n")
-        .replace('\"', "\\\"")
+    str.replace('\\', r#"\\"#)
+        .replace('\n', r#"\n"#)
+        .replace('\"', r#"\""#)
 }
 
 #[cfg(test)]

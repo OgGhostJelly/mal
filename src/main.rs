@@ -5,6 +5,10 @@ use std::{env, rc::Rc};
 use rustyline::{error::ReadlineError, Editor};
 use shtml::{list, re, rep, str, sym, Env, MalVal};
 
+// FIXME:
+// Long chains of throwing and catching errors can lead to errors that look like this:
+// "error: error: error: error: error: internal error: io: No such file or directory (os error 2)"
+
 fn main() {
     let env = Env::default();
 
@@ -12,7 +16,6 @@ fn main() {
     if let Some(file) = args.next() {
         let args: Vec<MalVal> = args.map(MalVal::Str).collect();
         let args = MalVal::List(Rc::new(args));
-        println!("*ARGV* = {args}");
         env.set("*ARGV*".into(), args);
 
         let ret = env.eval(&list!(sym!("load-file"), str!(file)));

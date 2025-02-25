@@ -20,7 +20,7 @@ mod types;
 pub enum Error {
     #[error("syntax error: {0}")]
     Reader(#[from] reader::Error),
-    #[error(transparent)]
+    #[error("internal error: {0}")]
     Env(#[from] env::Error),
     #[error("error: {0}")]
     Custom(MalVal),

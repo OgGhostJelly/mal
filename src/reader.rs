@@ -16,8 +16,8 @@ pub enum Error {
     UnmatchedRightParenthesis,
     #[error("invalid map key type, map keys can only be string or keyword type")]
     InvalidMapKeyType,
-    #[error("key does not have a corresponding value")]
-    MismatchedKey,
+    #[error("map key does not have a corresponding value")]
+    MismatchedMapKey,
     #[error(transparent)]
     Pcre(#[from] pcre2::Error),
     #[error(transparent)]
@@ -111,11 +111,19 @@ impl Reader<'_> {
     }
 }
 
-fn unescape_str(str: &str) -> String {
-    str.trim_matches('\"')
-        .replace("\\\\", "\\")
-        .replace("\\n", "\n")
-        .replace("\\\"", "\"")
+fn unescape_str(mut str: &str) -> String {
+    // trim the starting and ending quotes
+    if str.starts_with('\"') {
+        str = &str[1..];
+    }
+    if str.ends_with('\"') {
+        str = &str[..str.len() - 1];
+    }
+
+    // unescape chars
+    str.replace(r#"\\"#, "\\")
+        .replace(r#"\n"#, "\n")
+        .replace(r#"\""#, "\"")
 }
 
 pub struct SeqReader<'a, 'b> {
@@ -154,7 +162,7 @@ impl SeqReader<'_, '_> {
             }
         }
         if key.is_some() {
-            return Err(Error::MismatchedKey);
+            return Err(Error::MismatchedMapKey);
         }
         Ok(Rc::new(map))
     }

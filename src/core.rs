@@ -72,6 +72,8 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
         ("keyword?", func!(predicate::keyword)),
         ("sequential?", func!(predicate::sequential)),
         ("map?", func!(predicate::map)),
+        ("fn?", func!(predicate::is_fn)),
+        ("macro?", func!(predicate::is_macro)),
         // other
         ("throw", func!(throw)),
     ]
@@ -244,8 +246,10 @@ mod meta {
     pub fn read_string(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_fixed_vec(args, 1)?;
         let str = args[0].to_str()?;
+        // TODO: better error handling
         let ret = match reader::read_str(str) {
             Err(reader::Error::None) => Ok(MalVal::Nil),
+            Err(e) => Err(crate::Error::Custom(MalVal::Str(e.to_string())))?,
             ret => ret,
         };
         Ok(ret?)
@@ -264,6 +268,9 @@ mod meta {
     pub fn eval(env: &Env, args: MalArgs) -> MalRet {
         let args = take_atleast_vec(args, 1)?;
         let (args, last) = args.split_at(args.len() - 1);
+
+        let env = env.find_repl();
+
         for value in args {
             env.eval(value)?;
         }
@@ -304,7 +311,7 @@ mod collection {
 
     use crate::{
         env::{Env, Error},
-        list, reader,
+        list,
         types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
     };
 
@@ -422,7 +429,7 @@ mod collection {
         let args = &args[1..];
 
         if args.len() % 2 != 0 {
-            return Err(reader::Error::MismatchedKey.into());
+            return Err(Error::MismatchedMapKey.into());
         }
 
         let mut new_map = HashMap::with_capacity(map.len() + args.len() / 2);
@@ -460,7 +467,6 @@ mod collection {
 
     pub fn get(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_fixed_vec(args, 2)?;
-        println!("(get {:#} {:#})", args[0], args[1]);
         let map = args[0].to_map()?;
         let key = args[1].to_map_key()?;
         Ok(map.get(&key).cloned().into())
@@ -549,8 +555,7 @@ mod cons {
     use std::{collections::HashMap, rc::Rc};
 
     use crate::{
-        env::Env,
-        reader,
+        env::{Env, Error},
         types::{take_fixed_vec, MalArgs, MalRet, MalVal},
     };
 
@@ -576,7 +581,7 @@ mod cons {
     )]
     pub fn hashmap(_env: &Env, args: MalArgs) -> MalRet {
         if args.len() % 2 != 0 {
-            return Err(reader::Error::MismatchedKey.into());
+            return Err(Error::MismatchedMapKey.into());
         }
 
         let mut map = HashMap::with_capacity(args.len() / 2);
@@ -635,6 +640,17 @@ mod predicate {
     }
     pub fn map(env: &Env, args: MalArgs) -> MalRet {
         is_all(env, args, |val| matches!(val, MalVal::Map(_)))
+    }
+    pub fn is_fn(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| {
+            matches!(val, MalVal::Func(..) | MalVal::MalFunc { .. })
+        })
+    }
+    pub fn is_macro(env: &Env, args: MalArgs) -> MalRet {
+        is_all(env, args, |val| match val {
+            MalVal::MalFunc { is_macro, .. } => is_macro,
+            _ => false,
+        })
     }
 }
 

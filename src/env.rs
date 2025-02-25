@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    list, re, reader, sym,
+    list, re, sym,
     types::{
         take_atleast_slice, take_atleast_vec, take_between_slice, take_fixed_slice, take_fixed_vec,
         MalArgs, MalRet, MalVal, RestBind,
@@ -30,6 +30,10 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("try* form missing catch*")]
     TryMissingCatch,
+    #[error("let* key does not have a corresponding value")]
+    MismatchedLetKey,
+    #[error("map key does not have a corresponding value")]
+    MismatchedMapKey,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -37,15 +41,17 @@ pub struct Env(Rc<EnvInner>);
 
 #[derive(PartialEq, Eq, Debug)]
 struct EnvInner {
+    name: String,
     data: RefCell<HashMap<String, MalVal>>,
     outer: Option<Env>,
 }
 
 impl Env {
     #[must_use]
-    pub fn new(outer: Option<Env>) -> Self {
+    pub fn new(name: String, outer: Option<Env>) -> Self {
         Self(
             EnvInner {
+                name,
                 data: RefCell::new(HashMap::new()),
                 outer,
             }
@@ -54,9 +60,9 @@ impl Env {
     }
 
     #[must_use]
-    pub fn top(&self) -> &Env {
+    pub fn find_repl(&self) -> &Env {
         let mut env = self;
-        while let Some(e) = &env.0.outer {
+        while let Some(ref e) = env.0.outer {
             env = e;
         }
         env
@@ -65,7 +71,7 @@ impl Env {
 
 impl Default for Env {
     fn default() -> Self {
-        let env = Self::new(None);
+        let env = Self::new("TOP".into(), None);
         env.apply_ns(crate::core::ns());
 
         // TODO: temp bindings, actually add them later
@@ -75,12 +81,10 @@ impl Default for Env {
             (def! time-ms nil)
             (def! meta nil)
             (def! with-meta nil)
-            (def! fn? nil)
             (def! string? nil)
             (def! number? nil)
             (def! seq nil)
             (def! and nil)
-            (def! macro? nil)
             (def! conj nil))"#,
         )
         .expect("builtin scripts should be valid mal");
@@ -208,7 +212,7 @@ impl Env {
                     RestBind::Ignore | RestBind::Bind(_) => take_atleast_vec(args, binds.len())?,
                 };
 
-                let env = Rc::new(Env::new(Some(outer.clone())));
+                let env = Env::new(name.clone().unwrap_or("lambda".into()), Some(outer.clone()));
 
                 let rest = args.split_off(binds.len());
 
@@ -222,7 +226,7 @@ impl Env {
 
                 let ret = r#do(&env, &body[..])?;
                 if *is_macro {
-                    Ok(TcoRetInner::Unevaluated(outer.clone(), ret.tco_eval()?))
+                    Ok(TcoRetInner::Unevaluated(self.clone(), ret.tco_eval()?))
                 } else {
                     Ok(ret)
                 }
@@ -323,10 +327,10 @@ fn r#let(env: &Env, ast: &[MalVal]) -> TcoRet {
 
     let binds = ast[0].to_seq()?;
 
-    let env = Env::new(Some(env.clone()));
+    let env = Env::new("let*".into(), Some(env.clone()));
 
     if binds.len() % 2 != 0 {
-        return Err(reader::Error::MismatchedKey.into());
+        return Err(Error::MismatchedLetKey.into());
     }
 
     for chunk in binds.chunks(2) {
@@ -450,7 +454,7 @@ fn r#try(env: &Env, ast: &[MalVal]) -> TcoRet {
     match env.eval(&ast[0]) {
         Ok(val) => Ok(TcoRetInner::Ret(val)),
         Err(err) => {
-            let env = Env::new(Some(env.clone()));
+            let env = Env::new("try*".into(), Some(env.clone()));
             env.set(bind.clone(), MalVal::Str(err.to_string()));
             r#do(&env, body)
         }
@@ -525,11 +529,57 @@ mod test {
                 &env,
                 r#"
             (do
-                (def! inc (fn* [ex & rest] (eval `(+ ex 1 ~@rest))))
+                (defmacro! inc (fn* [ex & rest] `(+ ~ex 1 ~@rest)))
                 (inc (inc 3) 3))
             "#
             ),
             Ok(MalVal::Int(8))
         ));
+
+        assert!(matches!(
+            re(
+                &env,
+                r#"
+            (do
+                (defmacro! inc (fn* [ex & rest] `(+ ~ex 1 ~@rest)))
+                (def! incinc2 (fn* [n] (inc (inc n n) n n)))
+                (incinc2 3))
+            "#
+            ),
+            Ok(MalVal::Int(14))
+        ));
+    }
+
+    #[test]
+    fn string_escaping() {
+        let env = Env::default();
+
+        assert!(matches!(
+            re(&env, r#" "\"" "#),
+            Ok(MalVal::Str(str)) if str == r#"""#,
+        ));
+
+        assert!(matches!(
+            re(&env, r#" "\\" "#),
+            Ok(MalVal::Str(str)) if str == r#"\"#,
+        ));
+
+        re(&env, r#"(def! *host-language* "test")"#).unwrap();
+
+        println!(
+            "{}",
+            match re(
+                &env,
+                r#"(str "(def! *host-language* \"" *host-language* "-mal\")")"#
+            ) {
+                Ok(e) => format!("{e}"),
+                Err(_) => "err".into(),
+            }
+        );
+
+        assert!(matches!(
+            re(&env, r#"(str "(def! *host-language* \"" *host-language* "-mal\")")"#),
+            Ok(MalVal::Str(str)) if str == r#"(def! *host-language* " test -mal")"#,
+        ))
     }
 }
