@@ -2,8 +2,8 @@
 
 use std::{env, rc::Rc};
 
+use ogj_mal::{list, re, rep, str, sym, Env, MalVal};
 use rustyline::{error::ReadlineError, Editor};
-use shtml::{list, re, rep, str, sym, Env, MalVal};
 
 fn main() {
     let env = Env::default();
