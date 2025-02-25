@@ -20,9 +20,11 @@ mod types;
 pub enum Error {
     #[error("syntax error: {0}")]
     Reader(#[from] reader::Error),
-    #[error("internal error: {0}")]
-    Env(#[from] env::Error),
+    #[error("runtime syntax error: {0}")]
+    RuntimeReader(reader::Error),
     #[error("error: {0}")]
+    Env(#[from] env::Error),
+    #[error("{0}")]
     Custom(MalVal),
 }
 
@@ -36,7 +38,10 @@ pub fn rep(env: &Env, input: &str) {
         match re(env, input) {
             Ok(ret) => println!("> {ret:#}"),
             Err(Error::Reader(reader::Error::None)) => {}
-            Err(e) => eprintln!("{e}"),
+            Err(e) => match e {
+                Error::Custom(e) => eprintln!("Uncaught exception: {e}\n  in ogj-rust"),
+                e => eprintln!("{e}\n  in ogj-rust"),
+            },
         }
     }
 }

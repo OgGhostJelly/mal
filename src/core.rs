@@ -246,13 +246,11 @@ mod meta {
     pub fn read_string(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_fixed_vec(args, 1)?;
         let str = args[0].to_str()?;
-        // TODO: better error handling
-        let ret = match reader::read_str(str) {
+        match reader::read_str(str) {
             Err(reader::Error::None) => Ok(MalVal::Nil),
-            Err(e) => Err(crate::Error::Custom(MalVal::Str(e.to_string())))?,
-            ret => ret,
-        };
-        Ok(ret?)
+            Err(e) => Err(crate::Error::RuntimeReader(e))?,
+            ret => Ok(ret?),
+        }
     }
 
     pub fn slurp(_env: &Env, args: MalArgs) -> MalRet {

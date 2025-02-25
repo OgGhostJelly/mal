@@ -516,7 +516,7 @@ mod test {
             matches!(re(&env, r#"(throw "uh oh")"#), Err(Error::Custom(MalVal::Str(err))) if err == "uh oh")
         );
         assert!(
-            matches!(re(&env, r#"(try* (throw "uh oh") (catch* err err))"#), Ok(MalVal::Str(err)) if err == "error: uh oh")
+            matches!(re(&env, r#"(try* (throw "uh oh") (catch* err err))"#), Ok(MalVal::Str(err)) if err == "uh oh")
         );
     }
 
