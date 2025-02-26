@@ -699,7 +699,7 @@ mod predicate {
     }
     pub fn is_fn(env: &Env, args: MalArgs) -> MalRet {
         is_all(env, args, |val| {
-            matches!(val, MalVal::Func(..) | MalVal::MalFunc { .. })
+            matches!(val, MalVal::Func(..) | MalVal::MalFunc { is_macro: false, .. })
         })
     }
     pub fn is_macro(env: &Env, args: MalArgs) -> MalRet {

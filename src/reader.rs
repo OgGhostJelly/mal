@@ -213,7 +213,7 @@ pub fn read_str(str: &str) -> Result<MalVal> {
 fn count_tokens_trim_end(reader: &Reader<'_>) -> usize {
     let mut count = reader.tokens.len();
     for value in reader.tokens.iter().rev() {
-        if value.is_empty() {
+        if value.is_empty() || value.starts_with(b";") {
             count -= 1;
         } else {
             break;
