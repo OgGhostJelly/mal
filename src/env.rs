@@ -39,7 +39,15 @@ pub enum Error {
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Env(Rc<EnvInner>);
 
-#[derive(PartialEq, Eq, Debug)]
+impl Env {
+    /// Duplicates and returns a new environment
+    /// as opposed to `clone` which creates a reference to the same environment.
+    pub fn deep_duplicate(&self) -> Self {
+        Self(Rc::new(self.0.as_ref().clone()))
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
 struct EnvInner {
     name: String,
     data: RefCell<HashMap<String, MalVal>>,
@@ -389,7 +397,7 @@ fn r#fn(env: &Env, ast: &[MalVal]) -> MalRet {
 
     Ok(MalVal::MalFunc {
         name: None,
-        outer: env.clone(),
+        outer: env.deep_duplicate(),
         binds: Rc::new(binds),
         rest_bind: Rc::new(rest_bind),
         body: Rc::new(body),
