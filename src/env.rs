@@ -208,7 +208,7 @@ impl Env {
                 body,
                 is_macro,
             } => {
-                _ = (name, is_macro);
+                _ = is_macro;
 
                 let mut args = match rest_bind.as_ref() {
                     RestBind::None => take_fixed_vec(args, binds.len())?,
@@ -216,6 +216,10 @@ impl Env {
                 };
 
                 let env = Env::new(name.clone().unwrap_or("lambda".into()), Some(outer.clone()));
+
+                if let Some(name) = name {
+                    env.set(name.clone(), op.clone());
+                }
 
                 let rest = args.split_off(binds.len());
 
