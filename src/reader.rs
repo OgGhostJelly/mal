@@ -211,24 +211,22 @@ pub fn read_str(str: &str) -> Result<Option<MalVal>> {
     let mut reader = Reader::new(tokenize(str)?);
     let val = reader.read_form()?;
 
-    if reader.position + 1 != count_tokens_trim_end(&reader) {
+    if !any_not_empty_tokens(&reader.tokens[reader.position + 1..]) {
         return Err(Error::UnexpectedEof);
     }
 
     Ok(val)
 }
 
-/// Count the amount of tokens in the reader excluding empty tokens at the end.
-fn count_tokens_trim_end(reader: &Reader<'_>) -> usize {
-    let mut count = reader.tokens.len();
-    for value in reader.tokens.iter().rev() {
-        if value.is_empty() {
-            count -= 1;
-        } else {
-            break;
+/// Check if any of the given tokens are not empty
+fn any_not_empty_tokens(tokens: &[&[u8]]) -> bool {
+    for token in tokens {
+        if token.is_empty() || token.starts_with(b";") {
+            continue;
         }
+        return false;
     }
-    count
+    true
 }
 
 #[cfg(test)]
