@@ -42,6 +42,7 @@ pub struct Env(Rc<EnvInner>);
 impl Env {
     /// Duplicates and returns a new environment
     /// as opposed to `clone` which creates a reference to the same environment.
+    #[must_use]
     pub fn deep_duplicate(&self) -> Self {
         Self(Rc::new(self.0.as_ref().clone()))
     }

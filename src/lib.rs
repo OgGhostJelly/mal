@@ -29,19 +29,24 @@ pub enum Error {
 }
 
 pub fn re(env: &Env, inp: &str) -> MalRet {
-    let ast = reader::read_str(inp)?;
+    let ast = reader::read_str(inp)?.unwrap_or(MalVal::Nil);
     env.eval(&ast)
 }
 
 pub fn rep(env: &Env, input: &str) {
     if !input.is_empty() {
-        match re(env, input) {
-            Ok(ret) => println!("> {ret:#}"),
-            Err(Error::Reader(reader::Error::None)) => {}
-            Err(e) => match e {
-                Error::Custom(e) => eprintln!("Uncaught exception: {e}\n  in ogj-rust"),
-                e => eprintln!("{e}\n  in ogj-rust"),
-            },
+        let ret = reader::read_str(input)
+            .transpose()
+            .map(|ast| env.eval(&ast?));
+
+        if let Some(ret) = ret {
+            match ret {
+                Ok(ret) => println!("> {ret:#}"),
+                Err(e) => match e {
+                    Error::Custom(e) => eprintln!("Uncaught exception: {e}\n  in ogj-rust"),
+                    e => eprintln!("{e}\n  in ogj-rust"),
+                },
+            }
         }
     }
 }

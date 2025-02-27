@@ -269,10 +269,10 @@ mod meta {
     pub fn read_string(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_fixed_vec(args, 1)?;
         let str = args[0].to_str()?;
-        match reader::read_str(str) {
-            Err(reader::Error::None) => Ok(MalVal::Nil),
-            Err(e) => Err(crate::Error::RuntimeReader(e))?,
-            ret => Ok(ret?),
+        match reader::read_str(str).transpose() {
+            None => Ok(MalVal::Nil),
+            Some(Err(e)) => Err(crate::Error::RuntimeReader(e))?,
+            Some(ret) => Ok(ret?),
         }
     }
 
@@ -699,7 +699,14 @@ mod predicate {
     }
     pub fn is_fn(env: &Env, args: MalArgs) -> MalRet {
         is_all(env, args, |val| {
-            matches!(val, MalVal::Func(..) | MalVal::MalFunc { is_macro: false, .. })
+            matches!(
+                val,
+                MalVal::Func(..)
+                    | MalVal::MalFunc {
+                        is_macro: false,
+                        ..
+                    }
+            )
         })
     }
     pub fn is_macro(env: &Env, args: MalArgs) -> MalRet {

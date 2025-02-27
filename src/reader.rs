@@ -26,8 +26,6 @@ pub enum Error {
     InvalidUtf8(#[from] Utf8Error),
     #[error("unexpected eof")]
     UnexpectedEof,
-    #[error("no tokens")]
-    None,
 }
 
 pub struct Reader<'a> {
@@ -59,25 +57,33 @@ impl Reader<'_> {
 }
 
 impl Reader<'_> {
-    pub fn read_form(&mut self) -> Result<MalVal> {
+    pub fn read_form(&mut self) -> Result<Option<MalVal>> {
         let val = match self.peek() {
-            b"(" => Ok(MalVal::List(SeqReader::new(self, b")").into_vec()?)),
-            b"[" => Ok(MalVal::Vector(SeqReader::new(self, b"]").into_vec()?)),
-            b"{" => Ok(MalVal::Map(SeqReader::new(self, b"}").into_map()?)),
-            b"@" => Ok(list!(sym!("deref"), self.next_form()?)),
-            b"'" => Ok(list!(sym!("quote"), self.next_form()?)),
-            b"`" => Ok(list!(sym!("quasiquote"), self.next_form()?)),
-            b"~" => Ok(list!(sym!("unquote"), self.next_form()?)),
-            b"~@" => Ok(list!(sym!("splice-unquote"), self.next_form()?)),
-            token if token.starts_with(b";") => self.next_form(),
-            _ => self.read_atom(),
+            b"(" => Ok(Some(MalVal::List(SeqReader::new(self, b")").into_vec()?))),
+            b"[" => Ok(Some(MalVal::Vector(SeqReader::new(self, b"]").into_vec()?))),
+            b"{" => Ok(Some(MalVal::Map(SeqReader::new(self, b"}").into_map()?))),
+            b"@" => self.read_shorthand("deref"),
+            b"'" => self.read_shorthand("quote"),
+            b"`" => self.read_shorthand("quasiquote"),
+            b"~" => self.read_shorthand("unquote"),
+            b"~@" => self.read_shorthand("splice-unquote"),
+            token if token.starts_with(b";") => Ok(None),
+            _ => self.read_atom().map(Some),
         }?;
         Ok(val)
     }
 
-    fn next_form(&mut self) -> Result<MalVal> {
-        self.next().ok_or(Error::None)?;
-        self.read_form()
+    pub fn read_shorthand(&mut self, sym: &str) -> Result<Option<MalVal>> {
+        Ok(Some(list!(sym!(sym), self.next_form()?)))
+    }
+
+    pub fn next_form(&mut self) -> Result<MalVal> {
+        self.next();
+        loop {
+            if let Some(value) = self.read_form()? {
+                return Ok(value);
+            }
+        }
     }
 
     pub fn read_atom(&self) -> Result<MalVal> {
@@ -178,7 +184,10 @@ impl Iterator for SeqReader<'_, '_> {
         if token == self.end {
             return None;
         }
-        Some(self.reader.read_form())
+        match self.reader.read_form().transpose() {
+            Some(value) => Some(value),
+            None => self.next(),
+        }
     }
 }
 
@@ -198,7 +207,7 @@ pub fn tokenize(str: &str) -> Result<Vec<&[u8]>> {
     Ok(vec)
 }
 
-pub fn read_str(str: &str) -> Result<MalVal> {
+pub fn read_str(str: &str) -> Result<Option<MalVal>> {
     let mut reader = Reader::new(tokenize(str)?);
     let val = reader.read_form()?;
 
@@ -213,7 +222,7 @@ pub fn read_str(str: &str) -> Result<MalVal> {
 fn count_tokens_trim_end(reader: &Reader<'_>) -> usize {
     let mut count = reader.tokens.len();
     for value in reader.tokens.iter().rev() {
-        if value.is_empty() || value.starts_with(b";") {
+        if value.is_empty() {
             count -= 1;
         } else {
             break;
@@ -229,7 +238,7 @@ mod test {
 
     use crate::{types::MapKey, MalVal};
 
-    use super::{read_str, tokenize, Error};
+    use super::{read_str, tokenize};
 
     #[test]
     fn tokenizing() {
@@ -249,7 +258,7 @@ mod test {
 
     #[test]
     fn reading_str() {
-        let value = try_read_str("  ( +  1  (+ \"my \\\\ cool \\\" string\\n\" 3) ) ");
+        let value = try_read_str("  ( +  1  (+ \"my \\\\ cool \\\" string\\n\" 3) ) ").unwrap();
         assert_eq!(
             value,
             MalVal::List(
@@ -269,22 +278,22 @@ mod test {
             )
         );
 
-        let value = try_read_str("  123  ");
+        let value = try_read_str("  123  ").unwrap();
         assert_eq!(value, MalVal::Int(123));
 
-        let value = try_read_str("  [true  nil  false] ");
+        let value = try_read_str("  [true  nil  false] ").unwrap();
         assert_eq!(
             value,
             MalVal::Vector(vec![MalVal::Bool(true), MalVal::Nil, MalVal::Bool(false),].into())
         );
 
-        let value = try_read_str("  abc  ");
+        let value = try_read_str("  abc  ").unwrap();
         assert_eq!(value, MalVal::Sym("abc".into()));
 
-        let value = try_read_str("(:abc)");
+        let value = try_read_str("(:abc)").unwrap();
         assert_eq!(value, MalVal::List(vec![MalVal::Kwd("abc".into()),].into()));
 
-        let value = try_read_str("{\"a\" 1 :b 2 \"c\" 3}");
+        let value = try_read_str("{\"a\" 1 :b 2 \"c\" 3}").unwrap();
         assert_eq!(
             value,
             MalVal::Map(Rc::new(
@@ -300,13 +309,10 @@ mod test {
         read_str(" {1  2} ").expect_err("only string keys should be allowed in map");
         read_str(" {:a} ").expect_err("mismatched keys in map should fail");
 
-        assert!(matches!(
-            read_str(" ; this is a comment "),
-            Err(Error::None)
-        ));
+        assert!(matches!(read_str(" ; this is a comment "), Ok(None)));
     }
 
-    fn try_read_str(str: &str) -> MalVal {
+    fn try_read_str(str: &str) -> Option<MalVal> {
         super::read_str(str).expect("read_str should not fail with the given input")
     }
 }
