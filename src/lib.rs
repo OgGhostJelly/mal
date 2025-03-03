@@ -10,6 +10,8 @@
 pub use env::Env;
 pub use types::{MalRet, MalVal};
 
+pub mod js;
+
 mod core;
 mod env;
 mod printer;

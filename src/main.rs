@@ -2,7 +2,7 @@
 
 use std::{env, rc::Rc};
 
-use ogj_mal::{list, re, rep, str, sym, Env, MalVal};
+use ogj_mal::{js, list, re, str, sym, Env, MalVal};
 use rustyline::{error::ReadlineError, Editor};
 
 fn main() {
@@ -33,7 +33,7 @@ fn main() {
         match rl.readline("user> ") {
             Ok(input) => {
                 let _ = rl.add_history_entry(&input);
-                rep(&env, &input);
+                println!("> {}", js::compile_str(&input).unwrap());
             }
             Err(ReadlineError::Interrupted) => continue,
             Err(ReadlineError::Eof) => break,

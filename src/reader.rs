@@ -117,7 +117,7 @@ impl Reader<'_> {
     }
 }
 
-fn unescape_str(mut str: &str) -> String {
+pub fn unescape_str(mut str: &str) -> String {
     // trim the starting and ending quotes
     if str.starts_with('\"') {
         str = &str[1..];

@@ -75,7 +75,7 @@ fn write_seq(
     Ok(())
 }
 
-fn escape_str(str: &str) -> String {
+pub fn escape_str(str: &str) -> String {
     str.replace('\\', r#"\\"#)
         .replace('\n', r#"\n"#)
         .replace('\"', r#"\""#)
