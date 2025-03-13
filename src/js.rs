@@ -6,9 +6,9 @@ use std::{
 };
 
 use crate::{
-    env, func,
+    env, func, list,
     printer::escape_str,
-    reader, str,
+    reader, str, sym,
     types::{take_atleast_slice, take_atleast_vec, take_fixed_slice, MalArgs, MapKey as MalMapKey},
     Env, Error, MalRet, MalVal,
 };
@@ -18,9 +18,16 @@ pub const fn ns() -> &'static [(&'static str, MalVal)] {
 }
 
 fn mal2js(_: &Env, args: MalArgs) -> MalRet {
-    let ast = take_atleast_vec(args, 1)?.swap_remove(0);
-    let js = format!("{}", compile(ast)?);
-    Ok(str!(js))
+    let ast = take_atleast_vec(args, 1)?;
+
+    if ast.len() == 1 {
+        let js = format!("{}", compile(ast[0].clone())?);
+        Ok(str!(js))
+    } else {
+        let ast = list!(sym!("do"), MalVal::List(Rc::new(ast)));
+        let js = format!("{}", compile(ast)?);
+        Ok(str!(js))
+    }
 }
 
 pub fn compile_str(input: &str) -> Result<JsVal, Error> {
@@ -97,6 +104,20 @@ fn compile_(block: &mut Block, ast: MalVal) -> Result<JsVal, Error> {
                             .into(),
                             value => JsStmt::Let(bind, value).into(),
                         });
+                    }
+                    "do" => {
+                        if args.is_empty() {
+                            return Ok(JsExpr::Undefined.into());
+                        }
+
+                        let (args, last) = args.split_at(args.len() - 1);
+
+                        for value in args {
+                            let value = compile_(block, value.clone())?;
+                            block.0.push(value);
+                        }
+
+                        return compile_(block, last[0].clone());
                     }
                     _ => {}
                 }
