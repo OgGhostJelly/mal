@@ -102,15 +102,15 @@ fn compile_(block: &mut Block, ast: MalVal) -> Result<JsVal, Error> {
                 }
             }
 
-            ls_to_call(block, ls).map(Into::into)
+            ls_to_call(block, &ls)
         }
         MalVal::Vector(vals) => {
             mal_seq_to_js(block, vals.iter(), |vals| JsExpr::Array(vals).into())
         }
-        MalVal::Map(map) => Ok(JsExpr::Object(mal_map_to_js(block, map)?).into()),
+        MalVal::Map(map) => Ok(JsExpr::Object(mal_map_to_js(block, &map)?).into()),
         MalVal::Sym(sym) => Ok(JsExpr::Symbol(str_to_sym(sym)).into()),
         MalVal::Str(str) => Ok(JsExpr::String(str).into()),
-        MalVal::Kwd(kwd) => Ok(JsExpr::String(kwd_to_js(kwd)).into()),
+        MalVal::Kwd(kwd) => Ok(JsExpr::String(kwd_to_js(&kwd)).into()),
         MalVal::Int(value) => Ok(JsExpr::Int(value).into()),
         MalVal::Bool(value) => Ok(JsExpr::Bool(value).into()),
         MalVal::Func(_, _) | MalVal::MalFunc { .. } => {
@@ -192,6 +192,10 @@ impl Block {
     pub fn push(&mut self, value: JsVal) -> JsExpr {
         match value {
             JsVal::Expr(value) => value,
+            #[expect(
+                clippy::match_wildcard_for_single_variants,
+                reason = "this is suppose to match all future variants of the enum"
+            )]
             JsVal::Stmt(mut value) => match value {
                 JsStmt::Let(symbol, expr) => {
                     let symbol = self.set(symbol, expr);
@@ -205,12 +209,13 @@ impl Block {
 
     pub fn append(&mut self, value: &mut Block) -> JsExpr {
         let Some(last) = value.0.pop() else {
-            return JsExpr::Undefined.into();
+            return JsExpr::Undefined;
         };
         self.0.append(&mut value.0);
         self.push(last)
     }
 
+    #[must_use]
     pub fn empty() -> Self {
         Self(vec![])
     }
@@ -225,7 +230,7 @@ where
     I: Iterator<Item = &'a MalVal> + ExactSizeIterator,
 {
     let mut exprs = vec![];
-    for value in seq.into_iter() {
+    for value in seq {
         let value = compile_(block, value.clone())?;
         exprs.push(block.push(value));
     }
@@ -235,13 +240,13 @@ where
 
 fn mal_map_to_js(
     block: &mut Block,
-    map: Rc<HashMap<MalMapKey, MalVal>>,
+    map: &Rc<HashMap<MalMapKey, MalVal>>,
 ) -> Result<HashMap<String, JsExpr>, Error> {
     let mut new_map = HashMap::with_capacity(map.len());
     for (key, value) in map.iter() {
         let key = match key.clone() {
             MalMapKey::Str(str) => str,
-            MalMapKey::Kwd(kwd) => kwd_to_js(kwd),
+            MalMapKey::Kwd(kwd) => kwd_to_js(&kwd),
         };
 
         let value = compile_(block, value.clone())?;
@@ -250,7 +255,7 @@ fn mal_map_to_js(
     Ok(new_map)
 }
 
-fn kwd_to_js(kwd: String) -> String {
+fn kwd_to_js(kwd: &str) -> String {
     let mut hasher = DefaultHasher::new();
     kwd.hash(&mut hasher);
     let hash = hasher.finish();
@@ -260,14 +265,14 @@ fn kwd_to_js(kwd: String) -> String {
 fn str_to_sym<T: Into<String>>(str: T) -> Symbol {
     let str = str.into();
 
-    if !str.chars().all(|ch| ch.is_alphabetic()) {
+    if !str.chars().all(char::is_alphabetic) {
         unimplemented!("js compiler doesn't support symbols with special characters yet")
     }
 
     Symbol(str)
 }
 
-fn ls_to_call(block: &mut Block, ls: Rc<Vec<MalVal>>) -> Result<JsVal, Error> {
+fn ls_to_call(block: &mut Block, ls: &Rc<Vec<MalVal>>) -> Result<JsVal, Error> {
     let ls = take_atleast_slice(ls.as_slice(), 1)?;
 
     let bind = str_to_sym(ls[0].to_sym()?);
@@ -294,14 +299,13 @@ fn args_to_func(args: &[MalVal]) -> Result<JsExpr, Error> {
         let value = value.to_sym()?;
 
         if value == "&" {
-            match params_iter.next() {
-                Some(value) => rest = Some(str_to_sym(value.to_sym()?)),
-                None => {}
+            if let Some(value) = params_iter.next() {
+                rest = Some(str_to_sym(value.to_sym()?));
             }
             break;
-        } else {
-            params.push(str_to_sym(value));
         }
+
+        params.push(str_to_sym(value));
     }
 
     if params_iter.next().is_some() {
@@ -369,7 +373,7 @@ impl fmt::Display for JsExpr {
                 }
                 write!(f, ")")?;
 
-                if let None = name {
+                if name.is_none() {
                     write!(f, "=>")?;
                 }
 
@@ -419,7 +423,7 @@ impl fmt::Display for MathOp {
     }
 }
 
-fn join<'a>(
+fn join(
     f: &mut fmt::Formatter<'_>,
     start: &str,
     end: &str,

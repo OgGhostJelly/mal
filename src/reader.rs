@@ -34,6 +34,7 @@ pub struct Reader<'a> {
 }
 
 impl Reader<'_> {
+    #[must_use]
     pub fn new(tokens: Vec<&[u8]>) -> Reader<'_> {
         Reader {
             tokens,
@@ -43,6 +44,10 @@ impl Reader<'_> {
 }
 
 impl Reader<'_> {
+    #[expect(
+        clippy::should_implement_trait,
+        reason = "its easier to simply have a next method than implement Iterator because of lifetimes"
+    )]
     pub fn next(&mut self) -> Option<&'_ [u8]> {
         if self.position + 1 >= self.tokens.len() {
             return None;
@@ -51,6 +56,7 @@ impl Reader<'_> {
         Some(self.peek())
     }
 
+    #[must_use]
     pub fn peek(&self) -> &'_ [u8] {
         self.tokens[self.position]
     }
@@ -117,6 +123,7 @@ impl Reader<'_> {
     }
 }
 
+#[must_use]
 pub fn unescape_str(mut str: &str) -> String {
     // trim the starting and ending quotes
     if str.starts_with('\"') {

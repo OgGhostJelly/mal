@@ -513,7 +513,7 @@ mod collection {
         let args = take_fixed_vec(args, 1)?;
         let map = args[0].to_map()?;
 
-        let keys = map.values().cloned().map(Into::into).collect();
+        let keys = map.values().cloned().collect();
 
         Ok(MalVal::List(Rc::new(keys)))
     }
