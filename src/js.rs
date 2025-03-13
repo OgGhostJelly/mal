@@ -6,19 +6,31 @@ use std::{
 };
 
 use crate::{
-    env,
-    printer::escape_str,
-    reader,
-    types::{take_atleast_slice, take_fixed_slice, MapKey as MalMapKey},
-    Error, MalVal,
+    env, func, printer::escape_str, reader, str, types::{take_atleast_slice, take_atleast_vec, take_fixed_slice, MalArgs, MapKey as MalMapKey}, Env, Error, MalRet, MalVal
 };
+
+pub const fn ns() -> &'static [(&'static str, MalVal)] {
+    &[
+        ("mal->js", func!(mal2js)),
+    ]
+}
+
+fn mal2js(_: &Env, args: MalArgs) -> MalRet {
+    let ast = take_atleast_vec(args, 1)?.swap_remove(0);
+    let js = format!("{}", compile(ast)?);
+    Ok(str!(js))
+}
 
 pub fn compile_str(input: &str) -> Result<JsVal, Error> {
     let Some(ast) = reader::read_str(input)? else {
         return Ok(JsExpr::Undefined.into());
     };
+    compile(ast)
+}
+
+pub fn compile(ast: MalVal) -> Result<JsVal, Error> {
     let mut block = Block::empty();
-    let value = compile(&mut block, ast)?;
+    let value = compile_(&mut block, ast)?;
     if block.0.is_empty() {
         Ok(value)
     } else {
@@ -28,7 +40,7 @@ pub fn compile_str(input: &str) -> Result<JsVal, Error> {
     }
 }
 
-pub fn compile(block: &mut Block, ast: MalVal) -> Result<JsVal, Error> {
+fn compile_(block: &mut Block, ast: MalVal) -> Result<JsVal, Error> {
     match ast {
         MalVal::List(ls) => {
             if ls.is_empty() {
@@ -65,7 +77,7 @@ pub fn compile(block: &mut Block, ast: MalVal) -> Result<JsVal, Error> {
                     "def!" => {
                         let args = take_fixed_slice::<2>(args)?;
                         let bind = str_to_sym(args[0].to_sym()?);
-                        let value = compile(block, args[1].clone())?;
+                        let value = compile_(block, args[1].clone())?;
                         let value = block.push(value);
 
                         return Ok(match value {
@@ -204,7 +216,7 @@ where
 {
     let mut exprs = vec![];
     for value in seq.into_iter() {
-        let value = compile(block, value.clone())?;
+        let value = compile_(block, value.clone())?;
         exprs.push(block.push(value));
     }
 
@@ -219,7 +231,7 @@ fn mal_map_to_js(block: &mut Block, map: Rc<HashMap<MalMapKey, MalVal>>) -> Resu
             MalMapKey::Kwd(kwd) => kwd_to_js(kwd),
         };
 
-        let value = compile(block, value.clone())?;
+        let value = compile_(block, value.clone())?;
         new_map.insert(key, block.push(value));
     }
     Ok(new_map)
@@ -286,7 +298,7 @@ fn args_to_func(args: &[MalVal]) -> Result<JsExpr, Error> {
     let mut body = Block(Vec::with_capacity(args.len()));
     let args = &args[1..];
     for value in args {
-        let ret = compile(&mut body, value.clone())?;
+        let ret = compile_(&mut body, value.clone())?;
         body.push(ret);
     }
 
