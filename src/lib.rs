@@ -15,7 +15,7 @@ pub mod js;
 mod core;
 mod env;
 mod printer;
-mod reader;
+pub mod reader;
 mod types;
 
 #[derive(thiserror::Error, Debug)]

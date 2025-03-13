@@ -6,13 +6,15 @@ use std::{
 };
 
 use crate::{
-    env, func, printer::escape_str, reader, str, types::{take_atleast_slice, take_atleast_vec, take_fixed_slice, MalArgs, MapKey as MalMapKey}, Env, Error, MalRet, MalVal
+    env, func,
+    printer::escape_str,
+    reader, str,
+    types::{take_atleast_slice, take_atleast_vec, take_fixed_slice, MalArgs, MapKey as MalMapKey},
+    Env, Error, MalRet, MalVal,
 };
 
 pub const fn ns() -> &'static [(&'static str, MalVal)] {
-    &[
-        ("mal->js", func!(mal2js)),
-    ]
+    &[("mal->js", func!(mal2js))]
 }
 
 fn mal2js(_: &Env, args: MalArgs) -> MalRet {
@@ -102,14 +104,18 @@ fn compile_(block: &mut Block, ast: MalVal) -> Result<JsVal, Error> {
 
             ls_to_call(block, ls).map(Into::into)
         }
-        MalVal::Vector(vals) => mal_seq_to_js(block, vals.iter(), |vals| JsExpr::Array(vals).into()),
+        MalVal::Vector(vals) => {
+            mal_seq_to_js(block, vals.iter(), |vals| JsExpr::Array(vals).into())
+        }
         MalVal::Map(map) => Ok(JsExpr::Object(mal_map_to_js(block, map)?).into()),
         MalVal::Sym(sym) => Ok(JsExpr::Symbol(str_to_sym(sym)).into()),
         MalVal::Str(str) => Ok(JsExpr::String(str).into()),
         MalVal::Kwd(kwd) => Ok(JsExpr::String(kwd_to_js(kwd)).into()),
         MalVal::Int(value) => Ok(JsExpr::Int(value).into()),
         MalVal::Bool(value) => Ok(JsExpr::Bool(value).into()),
-        MalVal::Func(_, _) | MalVal::MalFunc { .. } => unreachable!("ast shouldn't contain any function types"),
+        MalVal::Func(_, _) | MalVal::MalFunc { .. } => {
+            unreachable!("ast shouldn't contain any function types")
+        }
         MalVal::Nil => Ok(JsExpr::Null.into()),
         MalVal::Atom(_) => unimplemented!("js compiler doesn't support atom types yet"),
     }
@@ -190,7 +196,7 @@ impl Block {
                 JsStmt::Let(symbol, expr) => {
                     let symbol = self.set(symbol, expr);
                     JsExpr::Symbol(symbol)
-                },
+                }
                 JsStmt::Block(ref mut other_block) => self.append(other_block),
                 value => self.push(JsVal::Stmt(value)),
             },
@@ -199,7 +205,7 @@ impl Block {
 
     pub fn append(&mut self, value: &mut Block) -> JsExpr {
         let Some(last) = value.0.pop() else {
-            return JsExpr::Undefined.into()
+            return JsExpr::Undefined.into();
         };
         self.0.append(&mut value.0);
         self.push(last)
@@ -210,7 +216,11 @@ impl Block {
     }
 }
 
-fn mal_seq_to_js<'a, I>(block: &mut Block, seq: I, map: impl Fn(Vec<JsExpr>) -> JsVal) -> Result<JsVal, Error>
+fn mal_seq_to_js<'a, I>(
+    block: &mut Block,
+    seq: I,
+    map: impl Fn(Vec<JsExpr>) -> JsVal,
+) -> Result<JsVal, Error>
 where
     I: Iterator<Item = &'a MalVal> + ExactSizeIterator,
 {
@@ -223,7 +233,10 @@ where
     Ok(map(exprs))
 }
 
-fn mal_map_to_js(block: &mut Block, map: Rc<HashMap<MalMapKey, MalVal>>) -> Result<HashMap<String, JsExpr>, Error> {
+fn mal_map_to_js(
+    block: &mut Block,
+    map: Rc<HashMap<MalMapKey, MalVal>>,
+) -> Result<HashMap<String, JsExpr>, Error> {
     let mut new_map = HashMap::with_capacity(map.len());
     for (key, value) in map.iter() {
         let key = match key.clone() {
@@ -329,12 +342,12 @@ impl fmt::Display for JsExpr {
 
                 impl fmt::Display for MapPair<'_> {
                     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        write!(f, "\"{}\":{}", escape_str(self.0.0), self.0.1)
+                        write!(f, "\"{}\":{}", escape_str(self.0 .0), self.0 .1)
                     }
                 }
 
                 join(f, "{", "}", exprs.iter().map(MapPair), ",")
-            },
+            }
             JsExpr::Bool(value) => write!(f, "{value}"),
             JsExpr::Int(value) => write!(f, "{value}"),
             JsExpr::String(str) => write!(f, "\"{}\"", escape_str(str)),
