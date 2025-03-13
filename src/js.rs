@@ -111,13 +111,29 @@ fn compile_(block: &mut Block, ast: MalVal) -> Result<JsVal, Error> {
                         }
 
                         let (args, last) = args.split_at(args.len() - 1);
+                        let mut block = Block::empty();
 
                         for value in args {
-                            let value = compile_(block, value.clone())?;
+                            let value = compile_(&mut block, value.clone())?;
                             block.0.push(value);
                         }
 
-                        return compile_(block, last[0].clone());
+                        let last = compile_(&mut block, last[0].clone())?;
+                        let last = block.push(last);
+                        block.0.push(JsStmt::Return(Some(last)).into());
+
+                        let func = JsExpr::Function {
+                            name: None,
+                            params: vec![],
+                            rest: None,
+                            body: block,
+                        };
+                        let call = JsExpr::Call {
+                            bind: Box::new(func),
+                            args: vec![],
+                        };
+
+                        return Ok(call.into());
                     }
                     _ => {}
                 }
@@ -177,7 +193,7 @@ pub enum JsExpr {
         body: Block,
     },
     Call {
-        bind: Symbol,
+        bind: Box<JsExpr>,
         args: Vec<JsExpr>,
     },
     Null,
@@ -213,17 +229,16 @@ impl Block {
     pub fn push(&mut self, value: JsVal) -> JsExpr {
         match value {
             JsVal::Expr(value) => value,
-            #[expect(
-                clippy::match_wildcard_for_single_variants,
-                reason = "this is suppose to match all future variants of the enum"
-            )]
             JsVal::Stmt(mut value) => match value {
                 JsStmt::Let(symbol, expr) => {
                     let symbol = self.set(symbol, expr);
                     JsExpr::Symbol(symbol)
                 }
                 JsStmt::Block(ref mut other_block) => self.append(other_block),
-                value => self.push(JsVal::Stmt(value)),
+                value @ JsStmt::Return(_) => {
+                    self.0.push(JsVal::Stmt(value));
+                    JsExpr::Undefined
+                }
             },
         }
     }
@@ -301,7 +316,7 @@ fn ls_to_call(block: &mut Block, ls: &Rc<Vec<MalVal>>) -> Result<JsVal, Error> {
     let args = &ls[1..];
     mal_seq_to_js(block, args.iter(), move |args| {
         JsExpr::Call {
-            bind: bind.clone(),
+            bind: Box::new(JsExpr::Symbol(bind.clone())),
             args,
         }
         .into()
@@ -401,7 +416,11 @@ impl fmt::Display for JsExpr {
                 join(f, "{", "}", body.0.iter(), ";")
             }
             JsExpr::Call { bind, args } => {
-                write!(f, "{bind}")?;
+                if let JsExpr::Symbol(_) = bind.as_ref() {
+                    write!(f, "{bind}")?;
+                } else {
+                    write!(f, "({bind})")?;
+                }
                 join(f, "(", ")", args.iter(), ",")
             }
             JsExpr::Null => write!(f, "null"),
