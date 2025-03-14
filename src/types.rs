@@ -222,6 +222,14 @@ impl fmt::Display for MalVal {
     }
 }
 
+pub fn take_between_vec(value: MalArgs, from: usize, to: usize) -> Result<MalArgs, Error> {
+    if value.len() < from || value.len() > to {
+        return Err(env::Error::BetweenParamsMismatch(from, to, value.len()).into());
+    }
+
+    Ok(value)
+}
+
 pub fn take_atleast_vec(value: MalArgs, at_least: usize) -> Result<MalArgs, Error> {
     match value.len().cmp(&at_least) {
         Ordering::Less => Err(env::Error::AtleastParamsMismatch(at_least, value.len()).into()),

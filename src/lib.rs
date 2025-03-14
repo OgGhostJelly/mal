@@ -12,11 +12,11 @@ pub use types::{MalRet, MalVal};
 
 pub mod js;
 
-mod core;
-mod env;
-mod printer;
+pub mod core;
+pub mod env;
+pub mod printer;
 pub mod reader;
-mod types;
+pub mod types;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
