@@ -33,6 +33,8 @@ fn main() {
         match rl.readline("user> ") {
             Ok(input) => {
                 let _ = rl.add_history_entry(&input);
+                let ret = re(&env, &input).unwrap();
+                println!("> {ret}");
                 println!("> {}", js::compile_str(&input).unwrap());
             }
             Err(ReadlineError::Interrupted) => continue,

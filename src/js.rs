@@ -283,14 +283,17 @@ fn kwd_to_js(kwd: &str) -> String {
     format!("{kwd}#{hash}")
 }
 
-fn str_to_sym<T: Into<String>>(str: T) -> Symbol {
-    let str = str.into();
+fn str_to_sym<T: Into<String>>(s: T) -> Symbol {
+    let s = s.into();
 
-    if !str.chars().all(char::is_alphabetic) {
-        unimplemented!("js compiler doesn't support symbols with special characters yet")
+    if !s
+        .chars()
+        .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '$' || ch == '.')
+    {
+        unimplemented!("js doesn't support those characters")
     }
 
-    Symbol(str)
+    Symbol(s)
 }
 
 fn ls_to_call(block: &mut Block, ls: &Rc<Vec<MalVal>>) -> Result<JsVal, Error> {
@@ -390,7 +393,10 @@ impl fmt::Display for JsExpr {
 
                 join(f, "(", "", params.iter(), ",")?;
                 if let Some(rest) = rest {
-                    write!(f, ", ...{rest}")?;
+                    if params.len() > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "...{rest}")?;
                 }
                 write!(f, ")")?;
 
