@@ -1,9 +1,9 @@
-# MAL
-This is a Rust implementation of [mal](https://github.com/kanaka/mal) that I created for fun. It includes most of the features of the original mal, sufficient enough to run the mal implementation of mal.
+# MAL (JSON)
+A modified version of [my mal implementation](https://github.com/OgGhostJelly/mal) that parses json data as mal code.
 
 Clone and run it:
 ```bash
-git clone https://github.com/OgGhostJelly/mal.git
+git clone -b json-reader https://github.com/OgGhostJelly/mal.git
 cd mal
 cargo run
 ```
