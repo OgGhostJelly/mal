@@ -262,14 +262,14 @@ mod string {
 mod meta {
     use crate::{
         env::{Env, Error},
-        reader,
+        json_reader,
         types::{take_atleast_vec, take_fixed_vec, MalArgs, MalRet, MalVal},
     };
 
     pub fn read_string(_env: &Env, args: MalArgs) -> MalRet {
         let args = take_fixed_vec(args, 1)?;
         let str = args[0].to_str()?;
-        match reader::read_str(str).transpose() {
+        match json_reader::read_str(str).transpose() {
             None => Ok(MalVal::Nil),
             Some(Err(e)) => Err(crate::Error::RuntimeReader(e))?,
             Some(ret) => Ok(ret?),

@@ -2,7 +2,7 @@
 
 use std::{env, rc::Rc};
 
-use ogj_mal::{list, re, rep, str, sym, Env, MalVal};
+use ogj_mal::{list, re_mal, rep, str, sym, Env, MalVal};
 use rustyline::{error::ReadlineError, Editor};
 
 fn main() {
@@ -26,7 +26,7 @@ fn main() {
         eprintln!("No previous history.");
     }
 
-    re(&env, r#"(println (str "Mal [" *host-language* "]"))"#)
+    re_mal(&env, r#"(println (str "Mal [" *host-language* "]"))"#)
         .expect("static str should be valid mal");
 
     loop {

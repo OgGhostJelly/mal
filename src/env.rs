@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    list, re, sym,
+    list, re_mal, sym,
     types::{
         take_atleast_slice, take_atleast_vec, take_between_slice, take_fixed_slice, take_fixed_vec,
         MalArgs, MalRet, MalVal, RestBind,
@@ -85,7 +85,7 @@ impl Default for Env {
 
         // TODO: temp bindings that mal requires to be self-hosted
         //       probably should add these in the future.
-        re(
+        re_mal(
             &env,
             r#"(do
             (def! meta nil)
@@ -93,17 +93,19 @@ impl Default for Env {
         )
         .expect("builtin scripts should be valid mal");
 
-        re(
+        re_mal(
             &env,
             r#"(do
             (def! *host-language* "ogj-rust")
+
+            (defmacro! defn! (fn* (name & xs) `(def! ~name (fn* ~@xs)) ))
 
             (def! not (fn* (a) (if a false true)))
 
             (def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\nnil)"))))))"#,
         )
         .expect("builtin scripts should be valid mal");
-        re(&env, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
+        re_mal(&env, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
         .expect("builtin scripts should be valid mal");
         env
     }
@@ -481,7 +483,7 @@ fn r#catch(ast: &MalVal) -> Result<(&String, &[MalVal])> {
 
 #[cfg(test)]
 mod test {
-    use crate::{re, Error, MalVal};
+    use crate::{re_mal, Error, MalVal};
 
     use super::Env;
 
@@ -489,15 +491,15 @@ mod test {
     fn r#math() {
         let env = Env::default();
         assert!(matches!(
-            re(&env, r#"(= (+ 1  2 ) 3)"#),
+            re_mal(&env, r#"(= (+ 1  2 ) 3)"#),
             Ok(MalVal::Bool(true))
         ));
         assert!(matches!(
-            re(&env, r#" (= ( - 4 5) -1 ) "#),
+            re_mal(&env, r#" (= ( - 4 5) -1 ) "#),
             Ok(MalVal::Bool(true))
         ));
         assert!(matches!(
-            re(&env, r#"(= (* 2 3 4) 24 (/ 48 2))"#),
+            re_mal(&env, r#"(= (* 2 3 4) 24 (/ 48 2))"#),
             Ok(MalVal::Bool(true))
         ));
     }
@@ -505,14 +507,14 @@ mod test {
     #[test]
     fn r#let() {
         let env = Env::default();
-        assert!(matches!(re(&env, r#"(def! a 4)"#), Ok(MalVal::Int(4))));
-        assert!(matches!(re(&env, r#"(def! b a)"#), Ok(MalVal::Int(4))));
+        assert!(matches!(re_mal(&env, r#"(def! a 4)"#), Ok(MalVal::Int(4))));
+        assert!(matches!(re_mal(&env, r#"(def! b a)"#), Ok(MalVal::Int(4))));
         assert!(matches!(
-            re(&env, r#"(let* [x 1 y x] () (= x y))"#),
+            re_mal(&env, r#"(let* [x 1 y x] () (= x y))"#),
             Ok(MalVal::Bool(true))
         ));
         assert!(matches!(
-            re(&env, r#"(let* (x b y 6) (= x (- y 2)))"#),
+            re_mal(&env, r#"(let* (x b y 6) (= x (- y 2)))"#),
             Ok(MalVal::Bool(true))
         ));
     }
@@ -521,10 +523,10 @@ mod test {
     fn try_catch() {
         let env = Env::default();
         assert!(
-            matches!(re(&env, r#"(throw "uh oh")"#), Err(Error::Custom(MalVal::Str(err))) if err == "uh oh")
+            matches!(re_mal(&env, r#"(throw "uh oh")"#), Err(Error::Custom(MalVal::Str(err))) if err == "uh oh")
         );
         assert!(
-            matches!(re(&env, r#"(try* (throw "uh oh") (catch* err err))"#), Ok(MalVal::Str(err)) if err == "uh oh")
+            matches!(re_mal(&env, r#"(try* (throw "uh oh") (catch* err err))"#), Ok(MalVal::Str(err)) if err == "uh oh")
         );
     }
 
@@ -533,7 +535,7 @@ mod test {
         let env = Env::default();
 
         assert!(matches!(
-            re(
+            re_mal(
                 &env,
                 r#"
             (do
@@ -545,7 +547,7 @@ mod test {
         ));
 
         assert!(matches!(
-            re(
+            re_mal(
                 &env,
                 r#"
             (do
@@ -563,20 +565,20 @@ mod test {
         let env = Env::default();
 
         assert!(matches!(
-            re(&env, r#" "\"" "#),
+            re_mal(&env, r#" "\"" "#),
             Ok(MalVal::Str(str)) if str == r#"""#,
         ));
 
         assert!(matches!(
-            re(&env, r#" "\\" "#),
+            re_mal(&env, r#" "\\" "#),
             Ok(MalVal::Str(str)) if str == r#"\"#,
         ));
 
-        re(&env, r#"(def! *host-language* "test")"#).unwrap();
+        re_mal(&env, r#"(def! *host-language* "test")"#).unwrap();
 
         println!(
             "{}",
-            match re(
+            match re_mal(
                 &env,
                 r#"(str "(def! *host-language* \"" *host-language* "-mal\")")"#
             ) {
@@ -586,7 +588,7 @@ mod test {
         );
 
         assert!(matches!(
-            re(&env, r#"(str "(def! *host-language* \"" *host-language* "-mal\")")"#),
+            re_mal(&env, r#"(str "(def! *host-language* \"" *host-language* "-mal\")")"#),
             Ok(MalVal::Str(str)) if str == r#"(def! *host-language* " test -mal")"#,
         ))
     }
