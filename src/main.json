@@ -1,0 +1,8 @@
+["defn!", "fib"
+  , "; Calculate the fibonacci sequence"
+  , ["a", "b", "count"]
+  , ["if", ["=", "count", 0]
+    , []
+    , ["cons"
+      , "a"
+      , ["fib", "b", ["+", "a", "b"], ["-", "count", 1]]]]]

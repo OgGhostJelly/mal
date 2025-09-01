@@ -2,7 +2,7 @@
 
 use std::{env, rc::Rc};
 
-use ogj_mal::{list, re_mal, rep, str, sym, Env, MalVal};
+use ogj_mal::{list, re_json, re_mal, rep, str, sym, Env, MalVal};
 use rustyline::{error::ReadlineError, Editor};
 
 fn main() {
@@ -25,6 +25,9 @@ fn main() {
     if rl.load_history(".mal-history").is_err() {
         eprintln!("No previous history.");
     }
+
+    let main = include_str!("main.json");
+    re_json(&env, &main).expect("main.json should be valid mal");
 
     re_mal(&env, r#"(println (str "Mal [" *host-language* "]"))"#)
         .expect("static str should be valid mal");
